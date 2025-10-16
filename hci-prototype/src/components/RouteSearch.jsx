@@ -27,18 +27,28 @@ function MapUpdater({ points }) {
 }
 
 export default function RouteSearch() {
-  const [fromCoords, setFromCoords] = useState({ lat: 14.5995, lon: 120.9842 }); // Manila coordinates
+  const [fromCoords, setFromCoords] = useState({ lat: 8.4542, lon: 124.6319 }); // CDO coordinates
   const [connectionStatus, setConnectionStatus] = useState('');
 
   const testConnection = async () => {
     try {
-      setConnectionStatus('Testing connection...');
-      const result = await searchRoute(14.5995, 120.9842, 14.6037, 120.9821); // Test coordinates
+      setConnectionStatus('Testing OTP connection...');
+      // Test coordinates in CDO (Divisoria to Centrio Mall)
+      const result = await searchRoute(
+        8.4542, 124.6319,  // Divisoria
+        8.4577, 124.6286,  // Centrio Mall
+        {
+          mode: 'TRANSIT,WALK',
+          time: new Date().toLocaleTimeString('en-US', { hour12: false })
+        }
+      );
       console.log('OTP Response:', result);
-      setConnectionStatus('Connection successful! Check console for details.');
+      if (result) {
+        setConnectionStatus('✅ Connection successful! Check browser console (F12) for response details.');
+      }
     } catch (error) {
       console.error('Connection error:', error);
-      setConnectionStatus(`Connection failed: ${error.message}`);
+      setConnectionStatus(`❌ Connection failed: ${error.message}. Check browser console (F12) for details.`);
     }
   };
   const [toCoords, setToCoords] = useState({ lat: 14.5995, lon: 120.9842 });
@@ -137,6 +147,24 @@ export default function RouteSearch() {
 
         {route && (
           <div className="mt-4">
+            {/* Test Connection Section */}
+            <div className="mb-4 p-4 bg-gray-100 rounded">
+              <button
+                onClick={testConnection}
+                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mb-2"
+              >
+                Test OTP Connection
+              </button>
+              {connectionStatus && (
+                <div className={`mt-2 p-2 rounded ${
+                  connectionStatus.includes('✅') ? 'bg-green-100' : 
+                  connectionStatus.includes('❌') ? 'bg-red-100' : 'bg-yellow-100'
+                }`}>
+                  {connectionStatus}
+                </div>
+              )}
+            </div>
+
             <h2 className="text-xl font-bold mb-2">Routes Found:</h2>
             <div className="bg-gray-50 p-4 rounded shadow">
               {route.plan?.itineraries?.map((itinerary, i) => (
