@@ -1,5 +1,5 @@
 // src/routes.js
-export const const jeepneyRoutes = [
+export const jeepneyRoutes = [
   {
     name: "R1",
     color: "blue",

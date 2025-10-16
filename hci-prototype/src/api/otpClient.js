@@ -1,23 +1,5 @@
 const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://8f2a63eb4d94.ngrok-free.app';
 
-// Using the newer API structure based on the URL format
-function buildPlannerUrl(fromLat, fromLon, toLat, toLon, options = {}) {
-  const defaultOptions = {
-    mode: 'TRANSIT,WALK',
-    date: new Date().toISOString().split('T')[0],
-    time: new Date().toLocaleTimeString('en-US', { hour12: false }).slice(0, 5)
-  };
-
-  const params = new URLSearchParams({
-    fromPlace: `${fromLat},${fromLon}`,
-    toPlace: `${toLat},${toLon}`,
-    ...defaultOptions,
-    ...options
-  });
-
-  return `${OTP_URL}/?${params.toString()}`;
-}
-
 // Search for locations (autocomplete)
 export async function searchLocations(searchText) {
   const query = `
