@@ -184,15 +184,6 @@ function MapSearch({ onSelectLocation }) {
 }
 
 export default function RouteSearch() {
-  // Predefined locations in CDO
-  const locations = {
-    'Divisoria': { lat: 8.4542, lon: 124.6319 },
-    'Centrio Mall': { lat: 8.4577, lon: 124.6286 },
-    'Limketkai Center': { lat: 8.4829, lon: 124.6347 },
-    'SM CDO Downtown': { lat: 8.4556, lon: 124.6319 },
-    'Cogon Market': { lat: 8.4873, lon: 124.6461 }
-  };
-
   const [fromCoords, setFromCoords] = useState(null);
   const [toCoords, setToCoords] = useState(null);
   const [fromLocation, setFromLocation] = useState('');
@@ -202,19 +193,6 @@ export default function RouteSearch() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [routePoints, setRoutePoints] = useState([]);
-
-  const handleLocationChange = (locationName, isFrom = true) => {
-    const coords = locations[locationName];
-    if (coords) {
-      if (isFrom) {
-        setFromCoords(coords);
-        setFromLocation(locationName);
-      } else {
-        setToCoords(coords);
-        setToLocation(locationName);
-      }
-    }
-  };
 
   const handleSearch = async () => {
     if (!fromCoords || !toCoords) {

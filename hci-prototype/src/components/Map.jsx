@@ -12,12 +12,11 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { ChevronDownIcon, XMarkIcon, MapPinIcon, ArrowPathIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 
-function MapSearch({ onSelectLocation }) {
+function MapSearch({ onSelectLocation, onFocusLocation }) {
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState(null);
-  const map = useMap();
 
   const searchLocation = useCallback(async (text) => {
     if (!text) {
@@ -126,15 +125,17 @@ function MapSearch({ onSelectLocation }) {
             <button
               key={index}
               onClick={() => {
-                const coords = { 
-                  lat: parseFloat(result.lat), 
+                const coords = {
+                  lat: parseFloat(result.lat),
                   lon: parseFloat(result.lon),
                   name: result.display_name.split(',')[0]
                 };
                 onSelectLocation(coords);
+                if (onFocusLocation) {
+                  onFocusLocation(coords);
+                }
                 setResults([]);
                 setSearchText('');
-                map.flyTo([coords.lat, coords.lon], 15);
               }}
               className="w-full text-left px-4 py-2 hover:bg-gray-100 focus:bg-gray-100"
             >
@@ -176,6 +177,8 @@ const destinationIcon = createCustomIcon("#EF4444");
 const currentLocationIcon = createCustomIcon("#10B981");
 
 // Route data with multiple routes
+const SHOW_JEEPNEY_ROUTES = false;
+
 const jeepneyRoutes = [
   {
     name: "R1",
@@ -683,31 +686,35 @@ function calculatePathDistance(path) {
 }
 
 // A hook to detect clicks and set markers
-function MapEvents({ setOrigin, setDestination, mode }) {
+function MapEvents({ setOrigin, setDestination, setMode, focusMap, mode }) {
   useMapEvents({
     click(e) {
+      const point = [e.latlng.lat, e.latlng.lng];
       if (mode === "origin") {
-        setOrigin([e.latlng.lat, e.latlng.lng]);
+        setOrigin(point);
+        setMode("destination");
       } else if (mode === "destination") {
-        setDestination([e.latlng.lat, e.latlng.lng]);
+        setDestination(point);
       }
+      focusMap(point);
     },
   });
   return null;
 }
 
 // Component to recenter map when needed
-function RecenterMap({ position }) {
+function RecenterMap({ position, zoom }) {
   const map = useMap();
   useEffect(() => {
     if (position) {
-      map.setView(position, map.getZoom());
+      map.setView(position, zoom ?? map.getZoom());
     }
-  }, [position, map]);
+  }, [position, zoom, map]);
   return null;
 }
 
 function Map() {
+  const defaultPosition = [8.4542, 124.6318];
   const [currentLocation, setCurrentLocation] = useState(null);
   const [origin, setOrigin] = useState(null);
   const [destination, setDestination] = useState(null);
@@ -721,8 +728,19 @@ function Map() {
   const [geoError, setGeoError] = useState(null);
   const panelRef = useRef(null);
   const dragHandleRef = useRef(null);
-
-  const defaultPosition = [8.4542, 124.6318];
+  const mapRef = useRef(null);
+  const [mapFocus, setMapFocus] = useState(defaultPosition);
+  const [mapZoom, setMapZoom] = useState(13);
+  const focusMap = useCallback((point, zoom = 15) => {
+    if (!point) {
+      return;
+    }
+    setMapFocus(point);
+    setMapZoom(zoom);
+    if (mapRef.current) {
+      mapRef.current.flyTo(point, zoom);
+    }
+  }, []);
 
   // Get user's current location
   const getCurrentLocation = () => {
@@ -738,6 +756,7 @@ function Map() {
           setMode("destination");
           setLoading(false);
           setPanelState("half");
+          focusMap([latitude, longitude]);
         },
         (error) => {
           console.error("Error getting location:", error);
@@ -779,6 +798,7 @@ function Map() {
     setMode("origin");
     setPanelState("collapsed");
     setGeoError(null);
+    focusMap(defaultPosition, 13);
   };
 
   // Handle touch events for dragging the panel
@@ -864,7 +884,14 @@ function Map() {
   return (
     <div className="flex h-screen w-screen relative">
       {/* Map Container */}
-      <MapContainer center={defaultPosition} zoom={13} className="h-full w-full z-0">
+      <MapContainer
+        center={defaultPosition}
+        zoom={13}
+        className="h-full w-full z-0"
+        whenCreated={(mapInstance) => {
+          mapRef.current = mapInstance;
+        }}
+      >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution="&copy; OpenStreetMap contributors"
@@ -892,15 +919,16 @@ function Map() {
         )}
 
         {/* Route lines */}
-        {jeepneyRoutes.map((route) => (
-          <Polyline 
-            key={route.name} 
-            positions={route.coordinates} 
-            color={route.color} 
-            weight={3} 
-            opacity={0.7}
-          />
-        ))}
+        {SHOW_JEEPNEY_ROUTES &&
+          jeepneyRoutes.map((route) => (
+            <Polyline
+              key={route.name}
+              positions={route.coordinates}
+              color={route.color}
+              weight={3}
+              opacity={0.7}
+            />
+          ))}
 
         {/* Route result lines */}
         {routeResult && routeResult.map((leg, index) => (
@@ -913,8 +941,14 @@ function Map() {
           />
         ))}
 
-        <MapEvents setOrigin={setOrigin} setDestination={setDestination} mode={mode} />
-        <RecenterMap position={origin || defaultPosition} />
+        <MapEvents
+          setOrigin={setOrigin}
+          setDestination={setDestination}
+          setMode={setMode}
+          focusMap={focusMap}
+          mode={mode}
+        />
+        <RecenterMap position={mapFocus} zoom={mapZoom} />
       </MapContainer>
 
       {/* Floating Panel */}
@@ -960,13 +994,22 @@ function Map() {
                 <div className="flex-grow border-t border-gray-700"></div>
               </div>
 
-              <MapSearch onSelectLocation={(coords) => {
-                if (!origin) {
-                  setOrigin([coords.lat, coords.lon]);
-                } else if (!destination) {
-                  setDestination([coords.lat, coords.lon]);
-                }
-              }} />
+              <MapSearch
+                onSelectLocation={(coords) => {
+                  const point = [coords.lat, coords.lon];
+                  if (!origin) {
+                    setOrigin(point);
+                    setCurrentLocation(null);
+                    setMode("destination");
+                    setPanelState("half");
+                  } else if (!destination) {
+                    setDestination(point);
+                  }
+                }}
+                onFocusLocation={(coords) => {
+                  focusMap([coords.lat, coords.lon]);
+                }}
+              />
 
               <button
                 onClick={() => setMode("origin")}
@@ -993,11 +1036,18 @@ function Map() {
                 </p>
               </div>
               
-              <MapSearch onSelectLocation={(coords) => {
-                if (!destination) {
-                  setDestination([coords.lat, coords.lon]);
-                }
-              }} />
+              <MapSearch
+                onSelectLocation={(coords) => {
+                  if (!destination) {
+                    const point = [coords.lat, coords.lon];
+                    setDestination(point);
+                    setPanelState("half");
+                  }
+                }}
+                onFocusLocation={(coords) => {
+                  focusMap([coords.lat, coords.lon]);
+                }}
+              />
 
               <button
                 onClick={() => setMode("destination")}
