@@ -539,7 +539,7 @@ function Map() {
           destination[1],
           {
             numItineraries: 5,
-            modes: ["TRANSIT", "WALK"],
+            transitModes: ["BUS:LOCAL_BUS"],
             maxWalkDistance: 1500,
           }
         );

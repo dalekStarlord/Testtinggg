@@ -1,4 +1,67 @@
-const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://8f2a63eb4d94.ngrok-free.app';
+const OTP_URL = import.meta.env.VITE_OTP_URL || "https://8f2a63eb4d94.ngrok-free.app";
+
+const VALID_TRANSIT_MODES = new Set([
+  "BUS",
+  "TRAM",
+  "RAIL",
+  "SUBWAY",
+  "FERRY",
+  "CABLE_CAR",
+  "GONDOLA",
+  "FUNICULAR",
+]);
+
+const VALID_MODE_QUALIFIERS = new Set([
+  "LOCAL_BUS",
+  "REGIONAL_BUS",
+  "INTERCITY_BUS",
+  "EXPRESS_BUS",
+]);
+
+const DEFAULT_TRANSIT_MODES = [
+  { mode: "BUS", qualifier: "LOCAL_BUS" },
+];
+
+function normalizeTransitModes(modes) {
+  const candidates = Array.isArray(modes) && modes.length > 0 ? modes : DEFAULT_TRANSIT_MODES;
+
+  const normalized = candidates
+    .map((entry) => {
+      if (typeof entry === "string") {
+        const [modePart, qualifierPart] = entry.toUpperCase().split(":");
+        if (!VALID_TRANSIT_MODES.has(modePart)) {
+          return null;
+        }
+
+        const normalizedMode = { mode: modePart };
+        if (qualifierPart && VALID_MODE_QUALIFIERS.has(qualifierPart)) {
+          normalizedMode.qualifier = qualifierPart;
+        }
+        return normalizedMode;
+      }
+
+      if (entry && typeof entry === "object") {
+        const modeValue = typeof entry.mode === "string" ? entry.mode.toUpperCase() : null;
+        if (!modeValue || !VALID_TRANSIT_MODES.has(modeValue)) {
+          return null;
+        }
+
+        const normalizedMode = { mode: modeValue };
+        if (entry.qualifier && typeof entry.qualifier === "string") {
+          const qualifierValue = entry.qualifier.toUpperCase();
+          if (VALID_MODE_QUALIFIERS.has(qualifierValue)) {
+            normalizedMode.qualifier = qualifierValue;
+          }
+        }
+        return normalizedMode;
+      }
+
+      return null;
+    })
+    .filter(Boolean);
+
+  return normalized.length > 0 ? normalized : DEFAULT_TRANSIT_MODES;
+}
 
 // Search for locations (autocomplete)
 export async function searchLocations(searchText) {
@@ -98,14 +161,16 @@ export async function getNearbyStops(lat, lon, radius = 500) {
 
 // Enhanced route search with more options
 export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) {
-  const { 
+  const {
     numItineraries = 3,
-    modes = ['TRANSIT', 'WALK'],
+    transitModes,
     maxWalkDistance = 1000,
     wheelchair = false,
     time = new Date().toISOString(),
-    arriveBy = false
+    arriveBy = false,
   } = options;
+
+  const normalizedTransitModes = normalizeTransitModes(transitModes);
 
   const query = `
     query planTrip(
@@ -221,7 +286,7 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) 
             lon: toLon
           },
           numItineraries,
-          modes: modes.map(mode => ({ mode })),
+          modes: normalizedTransitModes,
           maxWalkDistance,
           wheelchair,
           time,
@@ -234,7 +299,17 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) 
       throw new Error('Network response was not ok');
     }
 
-    return await response.json();
+    const result = await response.json();
+
+    if (Array.isArray(result?.errors) && result.errors.length > 0) {
+      const message = result.errors
+        .map((error) => error?.message)
+        .filter(Boolean)
+        .join('; ');
+      throw new Error(message || 'The OTP server returned an unknown error.');
+    }
+
+    return result;
   } catch (error) {
     console.error('Error fetching route:', error);
     throw error;
