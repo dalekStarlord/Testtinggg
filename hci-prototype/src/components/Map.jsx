@@ -10,7 +10,142 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { ChevronDownIcon, XMarkIcon, MapPinIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, XMarkIcon, MapPinIcon, ArrowPathIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+
+function MapSearch({ onSelectLocation }) {
+  const [searchText, setSearchText] = useState('');
+  const [results, setResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState(null);
+  const map = useMap();
+
+  const searchLocation = useCallback(async (text) => {
+    if (!text) {
+      setResults([]);
+      setError(null);
+      return;
+    }
+    
+    setIsSearching(true);
+    setResults([]);
+    setError(null);
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?` +
+        `q=${encodeURIComponent(text + ' Cagayan de Oro')}&` +
+        `format=json&bounded=1&viewbox=124.5319,8.3542,124.7319,8.5542`,
+        { signal: controller.signal }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch locations. Please try again.');
+      }
+      
+      const data = await response.json();
+      
+      if (!Array.isArray(data)) {
+        throw new Error('Invalid response from search service');
+      }
+      
+      const filteredResults = data.filter(result => {
+        if (!result.lat || !result.lon || !result.display_name) return false;
+        
+        const lat = parseFloat(result.lat);
+        const lon = parseFloat(result.lon);
+        
+        return result.display_name.toLowerCase().includes('cagayan de oro') &&
+          !isNaN(lat) && !isNaN(lon) &&
+          lat >= 8.3542 && lat <= 8.5542 &&
+          lon >= 124.5319 && lon <= 124.7319;
+      });
+      
+      setResults(filteredResults);
+    } catch (error) {
+      console.error('Search error:', error);
+      if (error.name === 'AbortError') {
+        setError('Search took too long. Please try again.');
+      } else {
+        setError(error.message || 'Failed to search locations. Please try again.');
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  return (
+    <div className="absolute top-4 left-4 right-4 z-[1000] bg-white rounded-lg shadow-lg max-w-md mx-auto">
+      <div className="relative">
+        <input
+          type="text"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              searchLocation(searchText);
+            }
+          }}
+          placeholder="Search for a location in CDO..."
+          className="w-full px-10 py-2 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none"
+        />
+        <button
+          onClick={() => searchLocation(searchText)}
+          className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-gray-500 hover:text-gray-700"
+        >
+          <MagnifyingGlassIcon className="w-5 h-5" />
+        </button>
+      </div>
+      {isSearching && (
+        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg p-2 text-gray-600">
+          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 inline-block text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          Searching locations in CDO...
+        </div>
+      )}
+      {error && !isSearching && (
+        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg p-2 text-red-600">
+          <span className="mr-2">⚠️</span>
+          {error}
+        </div>
+      )}
+      {!isSearching && !error && results.length === 0 && searchText && (
+        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg p-2 text-gray-600">
+          No locations found in CDO area. Try a different search term.
+        </div>
+      )}
+      {!isSearching && !error && results.length > 0 && (
+        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {results.map((result, index) => (
+            <button
+              key={index}
+              onClick={() => {
+                const coords = { 
+                  lat: parseFloat(result.lat), 
+                  lon: parseFloat(result.lon),
+                  name: result.display_name.split(',')[0]
+                };
+                onSelectLocation(coords);
+                setResults([]);
+                setSearchText('');
+                map.flyTo([coords.lat, coords.lon], 15);
+              }}
+              className="w-full text-left px-4 py-2 hover:bg-gray-100 focus:bg-gray-100"
+            >
+              {result.display_name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Fix Leaflet marker icons issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -824,7 +959,15 @@ function Map() {
                 <span className="mx-4 text-gray-500 text-sm">OR</span>
                 <div className="flex-grow border-t border-gray-700"></div>
               </div>
-              
+
+              <MapSearch onSelectLocation={(coords) => {
+                if (!origin) {
+                  setOrigin([coords.lat, coords.lon]);
+                } else if (!destination) {
+                  setDestination([coords.lat, coords.lon]);
+                }
+              }} />
+
               <button
                 onClick={() => setMode("origin")}
                 className="flex items-center justify-center space-x-2 bg-gray-700 text-white py-3 rounded-lg font-medium hover:bg-gray-600 transition-colors"
@@ -850,9 +993,15 @@ function Map() {
                 </p>
               </div>
               
+              <MapSearch onSelectLocation={(coords) => {
+                if (!destination) {
+                  setDestination([coords.lat, coords.lon]);
+                }
+              }} />
+
               <button
                 onClick={() => setMode("destination")}
-                className="flex items-center justify-center space-x-2 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+                className="flex items-center justify-center space-x-2 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors mt-4"
               >
                 <MapPinIcon className="w-5 h-5" />
                 <span>Select Destination on Map</span>
