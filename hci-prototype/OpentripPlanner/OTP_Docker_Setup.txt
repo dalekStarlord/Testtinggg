@@ -1,0 +1,159 @@
+# OpenTripPlanner (OTP) Setup with Docker on Windows
+
+This guide explains how to run [OpenTripPlanner](https://www.opentripplanner.org/) locally on Windows using Docker.  
+It covers prerequisites, file setup, graph building, and running the OTP server.
+
+---
+
+## 1. Prerequisites
+
+Before starting, make sure you have:
+
+- **Docker Desktop for Windows**  
+  [Download here](https://www.docker.com/products/docker-desktop)  
+  - During installation, enable **WSL 2 backend**.
+  - After install, check that Docker is running (🐳 whale icon in system tray).
+
+- **Java (optional)**  
+  Only needed if you want to run OTP with the `.jar` file instead of Docker.
+
+- **Data files**  
+  - `.osm.pbf` → OpenStreetMap extract for your area (e.g., from [Geofabrik](https://download.geofabrik.de/)).  
+  - `.zip` → GTFS transit feed for your routes (make sure the filename includes the word **`gtfs`**, e.g., `cdo.gtfs.zip`).  
+  - (Optional) `otp-config.json` → for enabling extra features (e.g., health check API).
+
+---
+
+## 2. File Organization
+
+Create a project folder. Example:
+
+```
+C:\Users\Gab\OneDrive\Desktop\OpentripPlanner
+```
+
+Inside this folder, place:
+
+```
+cdo.osm.pbf
+cdo.gtfs.zip
+otp-config.json   (optional)
+```
+
+> ⚠️ Make sure the folder is on a **shared drive** in Docker Desktop (Settings → Resources → File Sharing → enable C:).
+
+---
+
+## 3. Download the OTP Docker Image
+
+Open **PowerShell** and pull the official OTP image:
+
+```powershell
+docker pull docker.io/opentripplanner/opentripplanner:2.8.0
+```
+
+---
+
+## 4. Build the Graph
+
+This step combines your OSM + GTFS data into a `graph.obj` file.
+
+```powershell
+docker run --rm `
+  -e "JAVA_TOOL_OPTIONS=-Xmx8g" `
+  -v "C:\Users\Gab\OneDrive\Desktop\OpentripPlanner:/var/opentripplanner" `
+  docker.io/opentripplanner/opentripplanner:2.8.0 `
+  --build --save
+```
+
+- `-Xmx8g` allocates 8 GB RAM (increase if needed).
+- `graph.obj` will appear in your folder after success.
+
+---
+
+## 5. Run the OTP Server
+
+Once the graph is built, start the server:
+
+```powershell
+docker run -it --rm -p 8080:8080 `
+  -e "JAVA_TOOL_OPTIONS=-Xmx8g" `
+  -v "C:\Users\Gab\OneDrive\Desktop\OpentripPlanner:/var/opentripplanner" `
+  docker.io/opentripplanner/opentripplanner:2.8.0 `
+  --load --serve
+```
+
+---
+
+## 6. Test the Setup
+
+- OTP Web Interface: [http://localhost:8080](http://localhost:8080)  
+- Health Endpoint (if you enabled in `otp-config.json`):  
+  [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
+
+---
+
+## 7. Running in Background (Optional)
+
+To keep OTP running in the background:
+
+```powershell
+docker run -d --name otp `
+  -p 8080:8080 `
+  -e "JAVA_TOOL_OPTIONS=-Xmx8g" `
+  -v "C:\Users\Gab\OneDrive\Desktop\OpentripPlanner:/var/opentripplanner" `
+  docker.io/opentripplanner/opentripplanner:2.8.0 `
+  --load --serve
+```
+
+- Stop: `docker stop otp`  
+- Restart: `docker start -a otp`
+
+---
+
+## 8. Troubleshooting
+
+- **Port already in use** → change `-p 8080:8080` to `-p 8081:8080` and open `http://localhost:8081`.
+- **File not found** → check your path is correct and that `C:` is shared in Docker Desktop.
+- **Out of memory** → increase `-Xmx` (e.g., `-Xmx12g`) if you have more RAM.
+- **No transit results** → ensure GTFS routes overlap with your OSM region and rebuild the graph.
+
+---
+
+## 9. Exposing OTP with Cloudflare Tunnel (Optional)
+
+You can make your local OTP backend available to Vercel or other frontends.
+
+1. Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/).
+2. Authenticate:
+   ```powershell
+   cloudflared tunnel login
+   ```
+3. Create a tunnel:
+   ```powershell
+   cloudflared tunnel create otp-backend
+   ```
+4. Create config file (`~/.cloudflared/config.yml`):
+   ```yaml
+   tunnel: otp-backend
+   credentials-file: C:\Users\Gab\.cloudflared\otp-backend.json
+
+   ingress:
+     - hostname: api.yourdomain.com
+       service: http://localhost:8080
+     - service: http_status:404
+   ```
+5. Add a DNS CNAME in Cloudflare for `api.yourdomain.com` pointing to the tunnel.
+6. Run:
+   ```powershell
+   cloudflared tunnel run otp-backend
+   ```
+
+Now your OTP instance is reachable at `https://api.yourdomain.com`.
+
+---
+
+## ✅ You’re Ready!
+
+Your OTP instance is now running locally in Docker.  
+Use it as a backend for your routing application, or tunnel it for external access.
