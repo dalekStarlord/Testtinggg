@@ -177,6 +177,8 @@ const destinationIcon = createCustomIcon("#EF4444");
 const currentLocationIcon = createCustomIcon("#10B981");
 
 // Route data with multiple routes
+const SHOW_JEEPNEY_ROUTES = false;
+
 const jeepneyRoutes = [
   {
     name: "R1",
@@ -917,15 +919,16 @@ function Map() {
         )}
 
         {/* Route lines */}
-        {jeepneyRoutes.map((route) => (
-          <Polyline 
-            key={route.name} 
-            positions={route.coordinates} 
-            color={route.color} 
-            weight={3} 
-            opacity={0.7}
-          />
-        ))}
+        {SHOW_JEEPNEY_ROUTES &&
+          jeepneyRoutes.map((route) => (
+            <Polyline
+              key={route.name}
+              positions={route.coordinates}
+              color={route.color}
+              weight={3}
+              opacity={0.7}
+            />
+          ))}
 
         {/* Route result lines */}
         {routeResult && routeResult.map((leg, index) => (
