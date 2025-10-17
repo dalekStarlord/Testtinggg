@@ -171,29 +171,28 @@ export const ROUTE_PLAN_QUERY = `
     $time: String!
     $arriveBy: Boolean!
     $numItineraries: Int!
-    $maxWalkDistance: Int!
-    $wheelchair: Boolean!
     $transportModes: [TransportMode!]!
   ) {
-    plan(
-      from: { lat: $fromLat, lon: $fromLon }
-      to: { lat: $toLat, lon: $toLon }
-      date: $date
-      time: $time
+    plan: trip(
+      from: { coordinates: { latitude: $fromLat, longitude: $fromLon } }
+      to: { coordinates: { latitude: $toLat, longitude: $toLon } }
+      dateTime: { date: $date, time: $time }
       arriveBy: $arriveBy
-      wheelchair: $wheelchair
-      maxWalkDistance: $maxWalkDistance
-      numItineraries: $numItineraries
+      numTripPatterns: $numItineraries
       transportModes: $transportModes
     ) {
-      itineraries {
+      itineraries: tripPatterns {
+        startTime: expectedStartTime
+        endTime: expectedEndTime
         duration
         walkTime
         walkDistance
         fares {
           type
-          currency
-          cents
+          amount {
+            currency
+            cents
+          }
         }
         fareProducts {
           id
@@ -204,30 +203,14 @@ export const ROUTE_PLAN_QUERY = `
           }
         }
         legs {
-          mode
+          transportMode
+          transportSubmode
           distance
           duration
-          realtime
+          expectedStartTime
+          expectedEndTime
           aimedStartTime
           aimedEndTime
-          startTime
-          endTime
-          from {
-            name
-            lat
-            lon
-            stop {
-              gtfsId
-            }
-          }
-          to {
-            name
-            lat
-            lon
-            stop {
-              gtfsId
-            }
-          }
           line {
             id
             publicCode
@@ -244,18 +227,33 @@ export const ROUTE_PLAN_QUERY = `
               textColour
             }
           }
-          route {
-            id
-            shortName
-            longName
-            color
-            textColor
+          fromPlace {
+            name
+            quay {
+              id
+            }
+            stopPlace {
+              id
+            }
+            coordinates {
+              latitude
+              longitude
+            }
           }
-          alerts {
-            alertHeaderText
+          toPlace {
+            name
+            quay {
+              id
+            }
+            stopPlace {
+              id
+            }
+            coordinates {
+              latitude
+              longitude
+            }
           }
-          legGeometry {
-            length
+          pointsOnLink {
             points
           }
         }
@@ -268,8 +266,6 @@ export const ROUTE_PLAN_QUERY = `
 export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, signal) {
   const {
     numItineraries = 3,
-    maxWalkDistance = 1000,
-    wheelchair = false,
     time = new Date(),
     arriveBy = false,
     allowedTransitModes = ['BUS'],
@@ -308,8 +304,6 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
           date,
           time: timeString,
           arriveBy,
-          wheelchair,
-          maxWalkDistance,
           numItineraries,
           transportModes,
         },
@@ -335,10 +329,125 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
       throw new Error(message || 'GraphQL response contained errors')
     }
 
-    return json.data ?? {}
+    return normaliseTripResponse(json.data)
   } catch (error) {
     console.error('Error fetching route:', error)
     throw error
+  }
+}
+
+function normaliseTripResponse(data) {
+  if (!data || typeof data !== 'object') {
+    return {}
+  }
+
+  const plan = data.plan
+  if (!plan || !Array.isArray(plan.itineraries)) {
+    return data
+  }
+
+  const normalisedItineraries = plan.itineraries.map((pattern) => {
+    const legs = Array.isArray(pattern.legs) ? pattern.legs.map(normaliseTripLeg) : []
+
+    const fares = Array.isArray(pattern.fares)
+      ? pattern.fares.map((fare) => ({
+          type: fare?.type ?? null,
+          currency: fare?.amount?.currency ?? fare?.currency ?? null,
+          cents: fare?.amount?.cents ?? fare?.cents ?? null,
+        }))
+      : []
+
+    const fareProducts = Array.isArray(pattern.fareProducts)
+      ? pattern.fareProducts.map((product) => ({
+          ...product,
+          amount: {
+            currency: product?.amount?.currency ?? null,
+            cents: product?.amount?.cents ?? null,
+          },
+        }))
+      : []
+
+    return {
+      ...pattern,
+      duration: pattern?.duration ?? null,
+      walkTime: pattern?.walkTime ?? null,
+      walkDistance: pattern?.walkDistance ?? null,
+      legs,
+      fares,
+      fareProducts,
+    }
+  })
+
+  return {
+    plan: {
+      itineraries: normalisedItineraries,
+    },
+  }
+}
+
+function normaliseTripLeg(leg) {
+  if (!leg || typeof leg !== 'object') {
+    return {}
+  }
+
+  const from = mapTripPlace(leg.fromPlace)
+  const to = mapTripPlace(leg.toPlace)
+
+  const startTime = leg.expectedStartTime || leg.aimedStartTime || null
+  const endTime = leg.expectedEndTime || leg.aimedEndTime || null
+  const duration = leg.duration ?? (startTime && endTime ? (new Date(endTime) - new Date(startTime)) / 1000 : null)
+
+  const primaryLine = leg.line || leg.serviceJourney?.line || null
+
+  const route = {
+    id: primaryLine?.id ?? null,
+    shortName: primaryLine?.publicCode ?? null,
+    longName: primaryLine?.name ?? null,
+    color: primaryLine?.colour ?? null,
+    textColor: primaryLine?.textColour ?? null,
+  }
+
+  return {
+    ...leg,
+    mode: leg.mode ?? leg.transportMode ?? null,
+    transportMode: leg.transportMode ?? leg.mode ?? null,
+    distance: leg.distance ?? null,
+    duration,
+    aimedStartTime: leg.aimedStartTime ?? null,
+    aimedEndTime: leg.aimedEndTime ?? null,
+    startTime,
+    endTime,
+    from,
+    to,
+    line: primaryLine,
+    route,
+    legGeometry: {
+      points: leg.pointsOnLink?.points ?? leg.legGeometry?.points ?? '',
+      length: leg.legGeometry?.length ?? null,
+    },
+    alerts: leg.alerts ?? [],
+    realtime: leg.realtime ?? null,
+  }
+}
+
+function mapTripPlace(place) {
+  if (!place || typeof place !== 'object') {
+    return null
+  }
+
+  const coordinates = place.coordinates || {}
+
+  const stopId = place.stopPlace?.id || place.quay?.id || null
+
+  return {
+    name: place.name ?? null,
+    lat: coordinates.latitude ?? place.lat ?? null,
+    lon: coordinates.longitude ?? place.lon ?? null,
+    stop: stopId
+      ? {
+          gtfsId: stopId,
+        }
+      : null,
   }
 }
 
