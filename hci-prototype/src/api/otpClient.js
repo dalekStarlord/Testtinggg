@@ -223,7 +223,9 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
   const date = dateSource.toISOString().split('T')[0];
   const timeString = dateSource.toTimeString().split(' ')[0].slice(0, 5);
 
-  const transportModes = allowedTransitModes.map((mode) => ({ mode }));
+  const transportModes = allowedTransitModes
+    .filter(Boolean)
+    .map((mode) => ({ transportMode: String(mode).toUpperCase() }));
 
   try {
     const response = await fetch(`${OTP_URL}/otp/transmodel/v3`, {
@@ -250,11 +252,19 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
       }),
     });
 
+    const rawText = await response.text();
+
     if (!response.ok) {
-      throw new Error('Network response was not ok');
+      const reason = rawText || response.statusText || 'Network response was not ok';
+      throw new Error(`GraphQL request failed (${response.status}): ${reason}`);
     }
 
-    const json = await response.json();
+    let json;
+    try {
+      json = rawText ? JSON.parse(rawText) : {};
+    } catch (parseError) {
+      throw new Error(`Failed to parse GraphQL response: ${parseError.message}`);
+    }
 
     if (json.errors && json.errors.length) {
       const message = json.errors.map((error) => error.message).join('; ');
