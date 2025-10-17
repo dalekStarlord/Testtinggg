@@ -391,8 +391,8 @@ function Map() {
   };
 
   return (
-    <div className="relative flex w-full flex-col gap-6 md:flex-row md:items-start">
-      <div className="order-2 w-full md:order-1 md:flex-1">
+    <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 md:flex-row md:items-start lg:px-8">
+      <div className="order-2 w-full md:order-1 md:flex-1 md:min-w-0">
         <div className="overflow-hidden rounded-3xl border border-slate-900 shadow-2xl">
           <MapContainer
             center={DEFAULT_CENTER}
@@ -443,7 +443,7 @@ function Map() {
         </div>
       </div>
 
-      <div className="order-1 md:order-2 md:w-[400px] lg:w-[440px]">
+      <div className="order-1 md:order-2 md:flex-shrink-0 md:basis-[22rem] md:self-stretch lg:basis-[26rem]">
         <SearchBar
           onSwap={handleSwap}
           onReset={handleReset}

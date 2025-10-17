@@ -86,3 +86,23 @@ npm run dev   # runs generate-version automatically
 ```
 
 Configure `VITE_OTP_URL` to point at your OTP instance if you are not using the dev proxy.
+
+## Vercel deployment checklist
+
+1. In the Vercel dashboard (Project → Settings → Environment Variables) add
+   `VITE_OTP_URL` with the absolute OTP base, e.g. `https://2b36aa1affb0.ngrok-free.app`.
+   The frontend appends `/otp` automatically, so you can leave it off the value.
+2. Trigger a new deployment. The build step runs `npm run generate-version`, which emits
+   `public/version.json` and writes version metadata consumed by the footer banner.
+3. After the deployment completes, verify the running revision:
+   - Visit the app and confirm the footer displays the short commit SHA and build time.
+   - Run `curl https://<your-app>.vercel.app/version.json` and check the SHA matches the
+     latest Git commit.
+   - In the browser dev tools network tab ensure GraphQL POST requests target the ngrok
+     host rather than `/otp/...` on the Vercel domain.
+4. If the map or planner fails to load, work through the troubleshooting card inside the
+   planner or use this condensed list:
+   - ✅ Check `VITE_OTP_URL` is set on the correct Vercel environment (Production vs Preview).
+   - ✅ Confirm the ngrok tunnel is active and reachable from the internet.
+   - ✅ Watch for `GraphQL request failed (404)` errors, which indicate the app is still
+     pointing at the Vercel origin instead of ngrok.

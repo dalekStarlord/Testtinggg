@@ -9,6 +9,26 @@ function buildOtpUrl(path = '/') {
   return `/otp${cleanPath}`
 }
 
+function buildOtpUrlWithParams(path, params = {}) {
+  const base = buildOtpUrl(path)
+  const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+
+  if (!entries.length) {
+    return base
+  }
+
+  if (/^https?:\/\//i.test(base)) {
+    const url = new URL(base)
+    for (const [key, value] of entries) {
+      url.searchParams.set(key, value)
+    }
+    return url.toString()
+  }
+
+  const query = new URLSearchParams(entries).toString()
+  return query ? `${base}?${query}` : base
+}
+
 // Search for locations (autocomplete)
 export async function searchLocations(searchText, signal) {
   const trimmed = searchText?.trim()
@@ -16,12 +36,13 @@ export async function searchLocations(searchText, signal) {
     return []
   }
 
-  const url = new URL(buildOtpUrl('/routers/default/geocode'))
-  url.searchParams.set('text', trimmed)
-  url.searchParams.set('size', '20')
+  const url = buildOtpUrlWithParams('/routers/default/geocode', {
+    text: trimmed,
+    size: '20',
+  })
 
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(url, {
       method: 'GET',
       signal,
     })
@@ -48,7 +69,7 @@ export async function searchLocations(searchText, signal) {
 
 // Get nearby stops
 export async function getNearbyStops(lat, lon, radius = 500, signal) {
-  const url = new URL(buildOtpUrl('/routers/default/index/stops'))
+  const url = buildOtpUrl('/routers/default/index/stops')
 
   const toRadians = (value) => (value * Math.PI) / 180
   const distanceBetween = (lat1, lon1, lat2, lon2) => {
@@ -66,7 +87,7 @@ export async function getNearbyStops(lat, lon, radius = 500, signal) {
   }
 
   try {
-    const response = await fetch(url.toString(), { signal })
+    const response = await fetch(url, { signal })
 
     if (!response.ok) {
       throw new Error(`Nearby stops request failed (${response.status})`)
