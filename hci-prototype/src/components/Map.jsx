@@ -113,9 +113,10 @@ function LocationField({
   onChange,
   onSelect,
   suggestions,
-  onFocus,
+  onFocus = () => {},
   isUsingMap,
   onClear,
+  onUseMap,
 }) {
   return (
     <div className="space-y-2">
@@ -123,6 +124,15 @@ function LocationField({
         <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</label>
         <div className="flex items-center gap-2 text-[11px] text-slate-400">
           {isUsingMap ? <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-blue-300">Tap map</span> : null}
+          {onUseMap ? (
+            <button
+              type="button"
+              onClick={onUseMap}
+              className="rounded-full border border-slate-700 px-3 py-0.5 text-[11px] font-medium text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+            >
+              {isUsingMap ? "Stop map" : "Use map"}
+            </button>
+          ) : null}
           {value && (
             <button type="button" onClick={onClear} className="text-slate-400 transition-colors hover:text-white">
               Clear
@@ -180,7 +190,7 @@ function Map() {
   const [destinationSuggestions, setDestinationSuggestions] = useState([]);
   const [originSelection, setOriginSelection] = useState(null);
   const [destinationSelection, setDestinationSelection] = useState(null);
-  const [activeField, setActiveField] = useState(null);
+  const [mapSelectionTarget, setMapSelectionTarget] = useState(null);
   const [routeLegs, setRouteLegs] = useState([]);
   const [routeSummary, setRouteSummary] = useState(null);
   const [routeError, setRouteError] = useState("");
@@ -219,14 +229,14 @@ function Map() {
           destinationSelection.lat,
           destinationSelection.lon,
           {
-            modes: ["BUS"],
             maxWalkDistance: 800,
             numItineraries: 4,
+            allowedTransitModes: ["BUS"],
           },
           controller.signal,
         );
 
-        const itineraries = result?.data?.plan?.itineraries || [];
+        const itineraries = result?.plan?.itineraries || [];
         if (!itineraries.length) {
           setRouteError("No itineraries returned. Try adjusting your search.");
           setRouteLegs([]);
@@ -260,9 +270,14 @@ function Map() {
           const coordinates = legPoints.map(([lat, lon]) => [lat, lon]);
           return {
             coordinates,
-            color: normaliseHex(leg.route?.color) ?? "#2563eb",
-            textColor: normaliseHex(leg.route?.textColor) ?? "#ffffff",
-            routeName: leg.route?.shortName || leg.route?.longName || `Leg ${index + 1}`,
+            color: normaliseHex(leg.route?.color || leg.routeColor) ?? "#2563eb",
+            textColor: normaliseHex(leg.route?.textColor || leg.routeTextColor) ?? "#ffffff",
+            routeName:
+              leg.route?.shortName ||
+              leg.route?.longName ||
+              leg.routeShortName ||
+              leg.routeLongName ||
+              `Leg ${index + 1}`,
             fromName: leg.from?.name || "Origin stop",
             toName: leg.to?.name || "Destination stop",
             distanceKm: (leg.distance || 0) / 1000,
@@ -271,7 +286,15 @@ function Map() {
           };
         });
 
-        const totalFareCents = (jeepneyOnly.fares || []).reduce((sum, fare) => sum + (fare?.cents || 0), 0);
+        let totalFareCents = 0;
+        if (Array.isArray(jeepneyOnly.fares)) {
+          totalFareCents = jeepneyOnly.fares.reduce((sum, fare) => sum + (fare?.cents || 0), 0);
+        } else if (jeepneyOnly.fare?.fare && typeof jeepneyOnly.fare.fare === "object") {
+          totalFareCents = Object.values(jeepneyOnly.fare.fare).reduce(
+            (sum, fare) => sum + (fare?.cents || 0),
+            0,
+          );
+        }
 
         setRouteLegs(decodedLegs);
         setRouteSummary({
@@ -387,33 +410,41 @@ function Map() {
     setOriginSelection(selection);
     setOriginQuery(selection.name);
     setOriginSuggestions([]);
-    setActiveField("destination");
+    if (mapSelectionTarget === "origin") {
+      setMapSelectionTarget("destination");
+    }
   };
 
   const handleDestinationSelect = (selection) => {
     setDestinationSelection(selection);
     setDestinationQuery(selection.name);
     setDestinationSuggestions([]);
-    setActiveField(null);
+    if (mapSelectionTarget === "destination") {
+      setMapSelectionTarget(null);
+    }
   };
 
   const handleMapClick = ({ lat, lon }) => {
-    if (!activeField) return;
+    if (!mapSelectionTarget) return;
     const candidate = {
-      name: `${activeField === "origin" ? "Origin" : "Destination"} via map`,
+      name: `${mapSelectionTarget === "origin" ? "Origin" : "Destination"} via map`,
       label: formatLatLng(lat, lon),
       lat,
       lon,
     };
 
-    if (activeField === "origin") {
+    if (mapSelectionTarget === "origin") {
       setOriginSelection(candidate);
       setOriginQuery(candidate.label);
-      setActiveField("destination");
+      if (!destinationSelection) {
+        setMapSelectionTarget("destination");
+      } else {
+        setMapSelectionTarget(null);
+      }
     } else {
       setDestinationSelection(candidate);
       setDestinationQuery(candidate.label);
-      setActiveField(null);
+      setMapSelectionTarget(null);
     }
   };
 
@@ -424,7 +455,7 @@ function Map() {
     setOriginQuery(destinationSelection ? destinationSelection.name : "");
     setDestinationQuery(originSelection ? originSelection.name : "");
     setRouteError("");
-    setActiveField(null);
+    setMapSelectionTarget(null);
   };
 
   const handleReset = () => {
@@ -437,7 +468,7 @@ function Map() {
     setRouteLegs([]);
     setRouteSummary(null);
     setRouteError("");
-    setActiveField(null);
+    setMapSelectionTarget(null);
     if (mapRef.current) {
       mapRef.current.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
     }
@@ -455,7 +486,7 @@ function Map() {
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
 
-        <MapClickCapture onClick={handleMapClick} enabled={Boolean(activeField)} />
+        <MapClickCapture onClick={handleMapClick} enabled={Boolean(mapSelectionTarget)} />
 
         {originSelection ? (
           <Marker position={[originSelection.lat, originSelection.lon]}>
@@ -515,17 +546,18 @@ function Map() {
               value={originQuery}
               onChange={(value) => {
                 setOriginQuery(value);
-                setActiveField("origin");
               }}
               onSelect={handleOriginSelect}
               suggestions={originSuggestions}
-              onFocus={() => setActiveField("origin")}
-              isUsingMap={activeField === "origin"}
+              isUsingMap={mapSelectionTarget === "origin"}
               onClear={() => {
                 setOriginQuery("");
                 setOriginSelection(null);
                 setRouteError("");
               }}
+              onUseMap={() =>
+                setMapSelectionTarget((current) => (current === "origin" ? null : "origin"))
+              }
             />
 
             <LocationField
@@ -534,31 +566,36 @@ function Map() {
               value={destinationQuery}
               onChange={(value) => {
                 setDestinationQuery(value);
-                setActiveField("destination");
               }}
               onSelect={handleDestinationSelect}
               suggestions={destinationSuggestions}
-              onFocus={() => setActiveField("destination")}
-              isUsingMap={activeField === "destination"}
+              isUsingMap={mapSelectionTarget === "destination"}
               onClear={() => {
                 setDestinationQuery("");
                 setDestinationSelection(null);
                 setRouteError("");
               }}
+              onUseMap={() =>
+                setMapSelectionTarget((current) => (current === "destination" ? null : "destination"))
+              }
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
               <p className="flex items-center gap-2">
                 <span className="inline-flex h-2.5 w-2.5 rounded-full bg-blue-500"></span>
-                Tap on the map to drop a pin
+                {mapSelectionTarget
+                  ? `Tap the map to set your ${mapSelectionTarget}`
+                  : "Use the buttons above to pick a point from the map"}
               </p>
-              <button
-                type="button"
-                onClick={() => setActiveField(activeField === "origin" ? "destination" : "origin")}
-                className="rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-              >
-                {activeField ? `Setting ${activeField}` : "Use map for origin"}
-              </button>
+              {mapSelectionTarget ? (
+                <button
+                  type="button"
+                  onClick={() => setMapSelectionTarget(null)}
+                  className="rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                >
+                  Cancel map pick
+                </button>
+              ) : null}
             </div>
 
             {loading ? (

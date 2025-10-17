@@ -1,4 +1,4 @@
-const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://8f2a63eb4d94.ngrok-free.app';
+const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://2b36aa1affb0.ngrok-free.app';
 
 // Search for locations (autocomplete)
 export async function searchLocations(searchText, signal) {
@@ -102,129 +102,41 @@ export async function getNearbyStops(lat, lon, radius = 500, signal) {
 export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, signal) {
   const {
     numItineraries = 3,
-    modes = ['TRANSIT', 'WALK'],
     maxWalkDistance = 1000,
     wheelchair = false,
-    time = new Date().toISOString(),
-    arriveBy = false
+    time = new Date(),
+    arriveBy = false,
+    allowedTransitModes = ['BUS']
   } = options;
 
-  const query = `
-    query planTrip(
-      $from: InputCoordinates!, 
-      $to: InputCoordinates!,
-      $numItineraries: Int!,
-      $modes: [TransitMode!],
-      $maxWalkDistance: Float,
-      $wheelchair: Boolean,
-      $time: String!,
-      $arriveBy: Boolean
-    ) {
-      plan(
-        from: $from
-        to: $to
-        numItineraries: $numItineraries
-        transportModes: $modes
-        maxWalkDistance: $maxWalkDistance
-        wheelchair: $wheelchair
-        time: $time
-        arriveBy: $arriveBy
-      ) {
-        itineraries {
-          duration
-          walkTime
-          transitTime
-          waitingTime
-          legs {
-            mode
-            startTime
-            endTime
-            duration
-            distance
-            route {
-              shortName
-              longName
-              type
-              color
-              textColor
-            }
-            from {
-              name
-              lat
-              lon
-              stop {
-                gtfsId
-                code
-                platformCode
-              }
-            }
-            to {
-              name
-              lat
-              lon
-              stop {
-                gtfsId
-                code
-                platformCode
-              }
-            }
-            legGeometry {
-              length
-              points
-            }
-            steps {
-              distance
-              streetName
-              relativeDirection
-              absoluteDirection
-              stayOn
-              bogusName
-              lon
-              lat
-            }
-            alerts {
-              alertHeaderText
-              alertDescriptionText
-              effectiveStartDate
-              effectiveEndDate
-            }
-          }
-          fares {
-            type
-            currency
-            cents
-          }
-        }
-      }
+  const searchParams = new URLSearchParams({
+    fromPlace: `${fromLat},${fromLon}`,
+    toPlace: `${toLat},${toLon}`,
+    numItineraries: String(numItineraries),
+    maxWalkDistance: String(maxWalkDistance),
+    wheelchair: String(Boolean(wheelchair)),
+    arriveBy: String(Boolean(arriveBy)),
+    mode: 'TRANSIT',
+    locale: 'en',
+    showIntermediateStops: 'false',
+    allowedTransitModes: allowedTransitModes.join(','),
+  });
+
+  if (time instanceof Date) {
+    searchParams.set('date', time.toISOString().split('T')[0]);
+    searchParams.set('time', time.toTimeString().split(' ')[0].slice(0, 5));
+  } else if (typeof time === 'string') {
+    const parsed = new Date(time);
+    if (!Number.isNaN(parsed.getTime())) {
+      searchParams.set('date', parsed.toISOString().split('T')[0]);
+      searchParams.set('time', parsed.toTimeString().split(' ')[0].slice(0, 5));
     }
-  `;
+  }
 
   try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          from: {
-            lat: fromLat,
-            lon: fromLon
-          },
-          to: {
-            lat: toLat,
-            lon: toLon
-          },
-          numItineraries,
-          modes: modes.map(mode => ({ mode })),
-          maxWalkDistance,
-          wheelchair,
-          time,
-          arriveBy
-        }
-      }),
-      signal
+    const response = await fetch(`${OTP_URL}/otp/routers/default/plan?${searchParams.toString()}`, {
+      method: 'GET',
+      signal,
     });
 
     if (!response.ok) {
