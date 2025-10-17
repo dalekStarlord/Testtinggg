@@ -150,7 +150,7 @@ to the correct REST and GraphQL targets.
 ## Vercel deployment checklist
 
 1. In the Vercel dashboard (Project → Settings → Environment Variables) add
-   `VITE_OTP_URL` with the absolute OTP base, e.g. `https://2b36aa1affb0.ngrok-free.app`.
+   `VITE_OTP_URL` with the absolute OTP base, e.g. `https://5d511c6dedd2.ngrok-free.app`.
    Values ending in `/otp` or `/otp/transmodel/v3` are also accepted and will be
    normalised automatically.
 2. Trigger a new deployment. The build step runs `npm run generate-version`, which emits
@@ -174,13 +174,13 @@ When you just need to verify connectivity (or rule out quoting issues) start wit
 smallest possible request:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" `
+Invoke-RestMethod -Method Post -Uri "https://5d511c6dedd2.ngrok-free.app/otp/transmodel/v3" `
   -ContentType "application/json" `
   -Body '{"query":"{ __typename }"}'
 ```
 
 ```cmd
-curl -X POST "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" ^
+curl -X POST "https://5d511c6dedd2.ngrok-free.app/otp/transmodel/v3" ^
   -H "Content-Type: application/json" ^
   -d "{\"query\":\"{ __typename }\"}"
 ```
@@ -215,7 +215,7 @@ $Variables = @{
 
 $Body = @{ query = $Query; variables = $Variables } | ConvertTo-Json -Depth 6
 
-Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" `
+Invoke-RestMethod -Method Post -Uri "https://5d511c6dedd2.ngrok-free.app/otp/transmodel/v3" `
   -ContentType "application/json" `
   -Body $Body
 ```
@@ -223,7 +223,7 @@ Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/tra
 #### Windows CMD one-liner
 
 ```cmd
-curl -X POST "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" ^
+curl -X POST "https://5d511c6dedd2.ngrok-free.app/otp/transmodel/v3" ^
   -H "Content-Type: application/json" ^
   -d "{\"query\":\"query ($from: InputCoordinates!, $to: InputCoordinates!) { trip(from: $from, to: $to, modes: [bus]) { itineraries { legs { mode line { id name } legGeometry { points } fromPlace { __typename name } toPlace { __typename name } } } } }\",\"variables\":{\"from\":{\"latitude\":8.4847,\"longitude\":124.6517},\"to\":{\"latitude\":8.4841,\"longitude\":124.6579}}}"
 ```
@@ -256,7 +256,7 @@ interface InputCoordinates {
 }
 
 export async function fetchTrip(from: InputCoordinates, to: InputCoordinates) {
-  const response = await fetch("https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3", {
+  const response = await fetch("https://5d511c6dedd2.ngrok-free.app/otp/transmodel/v3", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query: TRIP_QUERY, variables: { from, to } }),
@@ -320,7 +320,7 @@ If you still get syntax errors after confirming the payload formatting, run a sc
 introspection request to make sure the endpoint itself is healthy:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" `
+Invoke-RestMethod -Method Post -Uri "https://5d511c6dedd2.ngrok-free.app/otp/transmodel/v3" `
   -ContentType "application/json" `
   -Body '{"query":"{ __schema { queryType { name } } }"}'
 ```
