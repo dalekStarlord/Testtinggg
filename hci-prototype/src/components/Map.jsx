@@ -10,9 +10,19 @@ import {
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { ChevronDownIcon, XMarkIcon, MapPinIcon, ArrowPathIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
+import {
+  ChevronDownIcon,
+  XMarkIcon,
+  MapPinIcon,
+  ArrowPathIcon,
+  MagnifyingGlassIcon,
+  SparklesIcon,
+  BoltIcon,
+  ClockIcon,
+  GlobeAmericasIcon,
+} from "@heroicons/react/24/outline";
 
-function MapSearch({ onSelectLocation, onFocusLocation }) {
+function MapSearch({ onSelectLocation, onFocusLocation, variant = "panel", placeholder = "Search for a location in CDO..." }) {
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -24,46 +34,46 @@ function MapSearch({ onSelectLocation, onFocusLocation }) {
       setError(null);
       return;
     }
-    
+
     setIsSearching(true);
     setResults([]);
     setError(null);
-    
+
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-      
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?` +
         `q=${encodeURIComponent(text + ' Cagayan de Oro')}&` +
         `format=json&bounded=1&viewbox=124.5319,8.3542,124.7319,8.5542`,
         { signal: controller.signal }
       );
-      
+
       clearTimeout(timeoutId);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch locations. Please try again.');
       }
-      
+
       const data = await response.json();
-      
+
       if (!Array.isArray(data)) {
         throw new Error('Invalid response from search service');
       }
-      
+
       const filteredResults = data.filter(result => {
         if (!result.lat || !result.lon || !result.display_name) return false;
-        
+
         const lat = parseFloat(result.lat);
         const lon = parseFloat(result.lon);
-        
+
         return result.display_name.toLowerCase().includes('cagayan de oro') &&
           !isNaN(lat) && !isNaN(lon) &&
           lat >= 8.3542 && lat <= 8.5542 &&
           lon >= 124.5319 && lon <= 124.7319;
       });
-      
+
       setResults(filteredResults);
     } catch (error) {
       console.error('Search error:', error);
@@ -77,8 +87,24 @@ function MapSearch({ onSelectLocation, onFocusLocation }) {
     }
   }, []);
 
+  const inputClasses = variant === "floating"
+    ? "w-full rounded-2xl border border-white/10 bg-slate-900/80 px-12 py-3 text-white placeholder-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+    : "w-full rounded-xl border border-gray-700 bg-gray-800 px-12 py-3 text-gray-100 placeholder-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30";
+
+  const buttonClasses = variant === "floating"
+    ? "absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-white"
+    : "absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white";
+
+  const dropdownBaseClasses = variant === "floating"
+    ? "absolute left-0 right-0 mt-3 rounded-2xl border border-white/10 bg-slate-950/90 shadow-2xl backdrop-blur"
+    : "absolute left-0 right-0 mt-2 rounded-xl border border-gray-700 bg-gray-900 shadow-2xl";
+
+  const dropdownTextClasses = variant === "floating" ? "text-slate-200" : "text-gray-200";
+
+  const statusClasses = `${dropdownBaseClasses} px-4 py-3 text-sm ${dropdownTextClasses}`;
+
   return (
-    <div className="absolute top-4 left-4 right-4 z-[1000] bg-white rounded-lg shadow-lg max-w-md mx-auto">
+    <div className={`relative w-full ${variant === "floating" ? "z-[1200]" : "z-40"}`}>
       <div className="relative">
         <input
           type="text"
@@ -89,19 +115,21 @@ function MapSearch({ onSelectLocation, onFocusLocation }) {
               searchLocation(searchText);
             }
           }}
-          placeholder="Search for a location in CDO..."
-          className="w-full px-10 py-2 rounded-lg border-2 border-gray-200 focus:border-blue-500 focus:outline-none"
+          placeholder={placeholder}
+          className={inputClasses}
         />
         <button
+          type="button"
           onClick={() => searchLocation(searchText)}
-          className="absolute right-2 top-1/2 transform -translate-y-1/2 p-2 text-gray-500 hover:text-gray-700"
+          className={buttonClasses}
+          aria-label="Search location"
         >
           <MagnifyingGlassIcon className="w-5 h-5" />
         </button>
       </div>
       {isSearching && (
-        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg p-2 text-gray-600">
-          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 inline-block text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <div className={statusClasses}>
+          <svg className="animate-spin mr-3 h-5 w-5 inline-block text-blue-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
@@ -109,18 +137,15 @@ function MapSearch({ onSelectLocation, onFocusLocation }) {
         </div>
       )}
       {error && !isSearching && (
-        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg p-2 text-red-600">
-          <span className="mr-2">⚠️</span>
-          {error}
-        </div>
+        <div className={`${statusClasses} text-red-300 border-red-500/40`}>⚠️ {error}</div>
       )}
       {!isSearching && !error && results.length === 0 && searchText && (
-        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg p-2 text-gray-600">
+        <div className={statusClasses}>
           No locations found in CDO area. Try a different search term.
         </div>
       )}
       {!isSearching && !error && results.length > 0 && (
-        <div className="absolute w-full bg-white mt-1 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className={`${dropdownBaseClasses} max-h-64 overflow-y-auto ${dropdownTextClasses}`}>
           {results.map((result, index) => (
             <button
               key={index}
@@ -137,7 +162,7 @@ function MapSearch({ onSelectLocation, onFocusLocation }) {
                 setResults([]);
                 setSearchText('');
               }}
-              className="w-full text-left px-4 py-2 hover:bg-gray-100 focus:bg-gray-100"
+              className="w-full text-left px-4 py-3 hover:bg-white/10 focus:bg-white/10 transition-colors"
             >
               {result.display_name}
             </button>
@@ -742,6 +767,25 @@ function Map() {
     }
   }, []);
 
+  const handleLocationSelection = useCallback((coords) => {
+    if (!coords) return;
+
+    const point = [coords.lat, coords.lon];
+
+    if (!origin || mode === "origin") {
+      setOrigin(point);
+      setDestination(null);
+      setCurrentLocation(null);
+      setMode("destination");
+    } else {
+      setDestination(point);
+    }
+
+    setPanelState("half");
+    setGeoError(null);
+    focusMap(point);
+  }, [origin, mode, focusMap]);
+
   // Get user's current location
   const getCurrentLocation = () => {
     if (navigator.geolocation) {
@@ -866,7 +910,7 @@ function Map() {
   }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const getPanelClass = () => {
-    let baseClasses = "fixed md:relative bottom-0 left-0 right-0 md:h-full md:w-96 bg-gray-900 text-white p-6 shadow-2xl transform transition-transform duration-300 z-40 md:translate-x-0 rounded-t-2xl md:rounded-none";
+    let baseClasses = "fixed md:absolute bottom-0 left-0 right-0 md:bottom-auto md:left-auto md:right-10 md:top-10 md:w-[24rem] bg-gray-900 text-white p-6 shadow-2xl transform transition-transform duration-300 z-40 md:translate-x-0 rounded-t-2xl md:rounded-3xl md:bg-slate-950/85 md:border md:border-white/10 md:backdrop-blur";
     
     if (isDragging) {
       return `${baseClasses}`;
@@ -882,7 +926,7 @@ function Map() {
   };
 
   return (
-    <div className="flex h-screen w-screen relative">
+    <div className="relative flex w-full h-[80vh] md:h-[88vh] bg-slate-950 text-white overflow-hidden">
       {/* Map Container */}
       <MapContainer
         center={defaultPosition}
@@ -951,6 +995,46 @@ function Map() {
         <RecenterMap position={mapFocus} zoom={mapZoom} />
       </MapContainer>
 
+      {/* Desktop hero overlay */}
+      <div className="pointer-events-none absolute inset-0 hidden md:flex items-start">
+        <div className="pointer-events-auto m-10 flex max-w-xl flex-col gap-6 rounded-3xl border border-white/10 bg-slate-950/85 p-8 shadow-2xl backdrop-blur">
+          <div className="inline-flex items-center gap-2 self-start rounded-full bg-blue-500/10 px-4 py-1 text-sm font-medium text-blue-200">
+            <SparklesIcon className="h-4 w-4" />
+            <span>Inspired by Sakay.ph</span>
+          </div>
+          <div>
+            <h1 className="text-4xl font-semibold leading-tight text-white">
+              Navigate Cagayan de Oro like a local
+            </h1>
+            <p className="mt-3 text-base text-slate-300">
+              Plan jeepney rides with fares, transfers, and walking directions in one smart planner.
+            </p>
+          </div>
+          <MapSearch
+            variant="floating"
+            placeholder={mode === "origin" ? "Where are you starting?" : "Where are you headed?"}
+            onSelectLocation={handleLocationSelection}
+          />
+          <div className="grid grid-cols-3 gap-3 text-sm text-slate-300">
+            <div className="rounded-2xl bg-white/5 p-4">
+              <BoltIcon className="h-5 w-5 text-amber-300" />
+              <p className="mt-2 font-semibold text-white">Smart routes</p>
+              <p className="mt-1 text-xs text-slate-400">Optimized transfers across CDO jeepney lines.</p>
+            </div>
+            <div className="rounded-2xl bg-white/5 p-4">
+              <ClockIcon className="h-5 w-5 text-emerald-300" />
+              <p className="mt-2 font-semibold text-white">Reliable ETAs</p>
+              <p className="mt-1 text-xs text-slate-400">Track walking and ride times for every leg.</p>
+            </div>
+            <div className="rounded-2xl bg-white/5 p-4">
+              <GlobeAmericasIcon className="h-5 w-5 text-sky-300" />
+              <p className="mt-2 font-semibold text-white">City coverage</p>
+              <p className="mt-1 text-xs text-slate-400">From uptown neighborhoods to Agora Market hubs.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Floating Panel */}
       <div ref={panelRef} className={getPanelClass()}>
         {/* Panel Drag Handle */}
@@ -962,7 +1046,7 @@ function Map() {
         </div>
 
         {/* Panel Content */}
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full md:h-auto">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold">🚍 Jeepney Route Finder</h2>
             {(origin || destination) && (
@@ -995,20 +1079,8 @@ function Map() {
               </div>
 
               <MapSearch
-                onSelectLocation={(coords) => {
-                  const point = [coords.lat, coords.lon];
-                  if (!origin) {
-                    setOrigin(point);
-                    setCurrentLocation(null);
-                    setMode("destination");
-                    setPanelState("half");
-                  } else if (!destination) {
-                    setDestination(point);
-                  }
-                }}
-                onFocusLocation={(coords) => {
-                  focusMap([coords.lat, coords.lon]);
-                }}
+                onSelectLocation={handleLocationSelection}
+                placeholder={mode === "origin" ? "Search for your origin..." : "Where do you want to go?"}
               />
 
               <button
@@ -1037,16 +1109,8 @@ function Map() {
               </div>
               
               <MapSearch
-                onSelectLocation={(coords) => {
-                  if (!destination) {
-                    const point = [coords.lat, coords.lon];
-                    setDestination(point);
-                    setPanelState("half");
-                  }
-                }}
-                onFocusLocation={(coords) => {
-                  focusMap([coords.lat, coords.lon]);
-                }}
+                onSelectLocation={handleLocationSelection}
+                placeholder="Search for your destination..."
               />
 
               <button
