@@ -208,18 +208,28 @@ export const ROUTE_PLAN_QUERY = `
           }
           fromPlace {
             name
-            lat
-            lon
+            coordinates {
+              latitude
+              longitude
+            }
             quay {
               id
+              stopPlace {
+                id
+              }
             }
           }
           toPlace {
             name
-            lat
-            lon
+            coordinates {
+              latitude
+              longitude
+            }
             quay {
               id
+              stopPlace {
+                id
+              }
             }
           }
           pointsOnLink {
@@ -400,7 +410,8 @@ function mapTripPlace(place) {
 
   const coordinates = place.coordinates || {}
 
-  const stopId = place.stopPlace?.id || place.quay?.id || null
+  const stopId =
+    place.stopPlace?.id || place.quay?.stopPlace?.id || place.quay?.id || null
 
   return {
     name: place.name ?? null,

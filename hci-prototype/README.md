@@ -16,35 +16,67 @@ query PlanJeepney(
   $time: String!
   $arriveBy: Boolean!
   $numItineraries: Int!
-  $maxWalkDistance: Int!
-  $wheelchair: Boolean!
-  $transportModes: [TransportMode!]!
 ) {
-  plan(
-    from: { lat: $fromLat, lon: $fromLon }
-    to: { lat: $toLat, lon: $toLon }
-    date: $date
-    time: $time
+  plan: trip(
+    from: { coordinates: { latitude: $fromLat, longitude: $fromLon } }
+    to: { coordinates: { latitude: $toLat, longitude: $toLon } }
+    dateTime: { date: $date, time: $time }
     arriveBy: $arriveBy
-    wheelchair: $wheelchair
-    maxWalkDistance: $maxWalkDistance
-    numItineraries: $numItineraries
-    transportModes: $transportModes
+    numTripPatterns: $numItineraries
   ) {
-    itineraries {
+    itineraries: tripPatterns {
+      startTime: expectedStartTime
+      endTime: expectedEndTime
       duration
-      walkTime
       legs {
         mode
-        route { shortName longName color textColor }
-        legGeometry { points }
+        distance
+        expectedStartTime
+        expectedEndTime
+        line { id publicCode name }
+        fromPlace {
+          name
+          coordinates { latitude longitude }
+          quay { id stopPlace { id } }
+        }
+        toPlace {
+          name
+          coordinates { latitude longitude }
+          quay { id stopPlace { id } }
+        }
+        pointsOnLink { points }
       }
     }
   }
 }
 ```
 
-`src/api/otpClient.js` normalises the OTP base URL, posts the GraphQL payload, surfaces parse errors, and returns the decoded response for the map to consume.
+`src/api/otpClient.js` normalises the OTP base URL, posts the GraphQL payload, surfaces parse errors, and returns the decoded response for the map to consume. OTP 2.8's Transmodel schema no longer exposes `lat`/`lon` directly on `Place`, so the query requests `coordinates { latitude longitude }` instead.
+
+Example variables the frontend sends with that query:
+
+```json
+{
+  "fromLat": 8.4847,
+  "fromLon": 124.6517,
+  "toLat": 8.4841,
+  "toLon": 124.6579,
+  "date": "2024-05-01",
+  "time": "08:15",
+  "arriveBy": false,
+  "numItineraries": 3
+}
+```
+
+To confirm field availability on your OTP build you can run an introspection query. This example inspects the `Place` type and is handy when fields move between releases:
+
+```bash
+curl -X POST "$OTP_URL/otp/transmodel/v3" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"query InspectPlace { __type(name: \"Place\") { name fields { name type { name kind ofType { name kind } } } } }"}'
+```
+
+Replace `InspectPlace` with other types such as `Leg` or `TripPattern` to discover their supported fields.
 
 ## Responsive search experience
 
