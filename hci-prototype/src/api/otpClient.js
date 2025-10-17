@@ -250,7 +250,6 @@ export const ROUTE_PLAN_QUERY = `
             points
           }
         }
-        }
       }
     }
   }
