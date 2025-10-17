@@ -1,7 +1,7 @@
 const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://8f2a63eb4d94.ngrok-free.app';
 
 // Search for locations (autocomplete)
-export async function searchLocations(searchText) {
+export async function searchLocations(searchText, signal) {
   const query = `
     query locationSearch($text: String!) {
       geocode(searchText: $text) {
@@ -29,7 +29,8 @@ export async function searchLocations(searchText) {
         variables: {
           text: searchText
         }
-      })
+      }),
+      signal
     });
 
     if (!response.ok) {
@@ -45,7 +46,7 @@ export async function searchLocations(searchText) {
 }
 
 // Get nearby stops
-export async function getNearbyStops(lat, lon, radius = 500) {
+export async function getNearbyStops(lat, lon, radius = 500, signal) {
   const query = `
     query stopsNearby($lat: Float!, $lon: Float!, $radius: Int!) {
       stopsByRadius(lat: $lat, lon: $lon, radius: $radius) {
@@ -81,7 +82,8 @@ export async function getNearbyStops(lat, lon, radius = 500) {
           lon,
           radius
         }
-      })
+      }),
+      signal
     });
 
     if (!response.ok) {
@@ -97,8 +99,8 @@ export async function getNearbyStops(lat, lon, radius = 500) {
 }
 
 // Enhanced route search with more options
-export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) {
-  const { 
+export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, signal) {
+  const {
     numItineraries = 3,
     modes = ['TRANSIT', 'WALK'],
     maxWalkDistance = 1000,
@@ -166,6 +168,10 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) 
                 platformCode
               }
             }
+            legGeometry {
+              length
+              points
+            }
             steps {
               distance
               streetName
@@ -217,7 +223,8 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) 
           time,
           arriveBy
         }
-      })
+      }),
+      signal
     });
 
     if (!response.ok) {
