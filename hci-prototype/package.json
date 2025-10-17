@@ -4,7 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "generate-version": "node ./scripts/generate-version.mjs",
+    "predev": "npm run generate-version",
     "dev": "vite",
+    "prebuild": "npm run generate-version",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

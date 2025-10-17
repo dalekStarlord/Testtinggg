@@ -12,6 +12,8 @@ import "leaflet/dist/leaflet.css";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import polyline from "@mapbox/polyline";
+import SearchBar from "./SearchBar";
 import { searchLocations, searchRoute } from "../api/otpClient";
 
 const DEFAULT_CENTER = [8.482, 124.647];
@@ -85,44 +87,6 @@ function getLegRouteName(leg, index) {
   );
 }
 
-function decodePolyline(encoded = "") {
-  const points = [];
-  let index = 0;
-  let lat = 0;
-  let lon = 0;
-
-  while (index < encoded.length) {
-    let shift = 0;
-    let result = 0;
-    let byte;
-
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-
-    const deltaLat = (result & 1) ? ~(result >> 1) : result >> 1;
-    lat += deltaLat;
-
-    shift = 0;
-    result = 0;
-
-    do {
-      byte = encoded.charCodeAt(index++) - 63;
-      result |= (byte & 0x1f) << shift;
-      shift += 5;
-    } while (byte >= 0x20);
-
-    const deltaLon = (result & 1) ? ~(result >> 1) : result >> 1;
-    lon += deltaLon;
-
-    points.push([lat / 1e5, lon / 1e5]);
-  }
-
-  return points;
-}
-
 function MapClickCapture({ onClick, enabled }) {
   useMapEvents({
     click(event) {
@@ -131,105 +95,6 @@ function MapClickCapture({ onClick, enabled }) {
     },
   });
   return null;
-}
-
-function SuggestionsList({ suggestions, onSelect }) {
-  if (!suggestions.length) {
-    return null;
-  }
-
-  return (
-    <ul className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 text-sm shadow-xl">
-      {suggestions.map((item) => (
-        <li key={`${item.lat}-${item.lon}-${item.label}`}>
-          <button
-            type="button"
-            onClick={() => onSelect(item)}
-            className="flex w-full flex-col items-start gap-1 px-4 py-2 text-left text-slate-200 transition-colors hover:bg-slate-800"
-          >
-            <span className="font-medium">{item.name}</span>
-            <span className="text-xs text-slate-400">{item.label}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function LocationField({
-  label,
-  placeholder,
-  value,
-  onChange,
-  onSelect,
-  suggestions,
-  onFocus = () => {},
-  isUsingMap,
-  onClear,
-  onUseMap,
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</label>
-        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-          {isUsingMap ? <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-blue-300">Tap map</span> : null}
-          {onUseMap ? (
-            <button
-              type="button"
-              onClick={onUseMap}
-              className="rounded-full border border-slate-700 px-3 py-0.5 text-[11px] font-medium text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-            >
-              {isUsingMap ? "Stop map" : "Use map"}
-            </button>
-          ) : null}
-          {value && (
-            <button type="button" onClick={onClear} className="text-slate-400 transition-colors hover:text-white">
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="relative">
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onFocus={onFocus}
-          placeholder={placeholder}
-          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-        />
-        <SuggestionsList suggestions={suggestions} onSelect={onSelect} />
-      </div>
-    </div>
-  );
-}
-
-function JeepneyLegDetails({ leg }) {
-  return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">Jeepney line</p>
-          <p className="text-lg font-semibold text-white">{leg.routeName}</p>
-          <p className="text-xs text-slate-400">{leg.fromName} ➜ {leg.toName}</p>
-        </div>
-        <div className="flex items-center gap-6 text-sm text-slate-200">
-          <span>{Math.round(leg.distanceKm * 10) / 10} km</span>
-          <span>{Math.round(leg.durationMinutes)} mins</span>
-        </div>
-      </div>
-      {leg.alerts.length ? (
-        <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-          <p className="font-semibold">Service alerts</p>
-          <ul className="mt-1 space-y-1">
-            {leg.alerts.map((alert, index) => (
-              <li key={index}>{alert.alertHeaderText || "Check operator advisory"}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </li>
-  );
 }
 
 function Map() {
@@ -294,9 +159,8 @@ function Map() {
           return;
         }
 
-        const jeepneyOnly = itineraries.find((itinerary) =>
-          itinerary.legs.every((leg) => leg.mode === "BUS"),
-        ) ||
+        const jeepneyOnly =
+          itineraries.find((itinerary) => itinerary.legs.every((leg) => leg.mode === "BUS")) ||
           itineraries.find((itinerary) => itinerary.legs.some((leg) => leg.mode === "BUS"));
 
         if (!jeepneyOnly) {
@@ -316,7 +180,7 @@ function Map() {
         }
 
         const decodedLegs = jeepneyLegs.map((leg, index) => {
-          const legPoints = leg.legGeometry?.points ? decodePolyline(leg.legGeometry.points) : [];
+          const legPoints = leg.legGeometry?.points ? polyline.decode(leg.legGeometry.points) : [];
           const coordinates = legPoints.map(([lat, lon]) => [lat, lon]);
           return {
             coordinates,
@@ -368,7 +232,7 @@ function Map() {
       } catch (error) {
         if (error.name === "AbortError") return;
         console.error("Failed to fetch route", error);
-        setRouteError("Unable to load jeepney routes right now. Please try again.");
+        setRouteError(error.message || "Unable to load jeepney routes right now. Please try again.");
         setRouteLegs([]);
         setRouteSummary(null);
       } finally {
@@ -460,6 +324,7 @@ function Map() {
     setOriginSelection(selection);
     setOriginQuery(selection.name);
     setOriginSuggestions([]);
+    setRouteError("");
     if (mapSelectionTarget === "origin") {
       setMapSelectionTarget("destination");
     }
@@ -469,6 +334,7 @@ function Map() {
     setDestinationSelection(selection);
     setDestinationQuery(selection.name);
     setDestinationSuggestions([]);
+    setRouteError("");
     if (mapSelectionTarget === "destination") {
       setMapSelectionTarget(null);
     }
@@ -525,183 +391,104 @@ function Map() {
   };
 
   return (
-    <div className="relative flex min-h-[640px] w-full flex-col md:min-h-[720px]">
-      <MapContainer
-        center={DEFAULT_CENTER}
-        zoom={DEFAULT_ZOOM}
-        className="h-[540px] w-full md:h-[720px]"
-        whenCreated={(instance) => {
-          mapRef.current = instance;
-        }}
-      >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
+    <div className="relative flex w-full flex-col gap-6 md:flex-row md:items-start">
+      <div className="order-2 w-full md:order-1 md:flex-1">
+        <div className="overflow-hidden rounded-3xl border border-slate-900 shadow-2xl">
+          <MapContainer
+            center={DEFAULT_CENTER}
+            zoom={DEFAULT_ZOOM}
+            className="h-[420px] w-full md:h-[720px]"
+            whenCreated={(instance) => {
+              mapRef.current = instance;
+            }}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="&copy; OpenStreetMap contributors" />
 
-        <MapClickCapture onClick={handleMapClick} enabled={Boolean(mapSelectionTarget)} />
+            <MapClickCapture onClick={handleMapClick} enabled={Boolean(mapSelectionTarget)} />
 
-        {originSelection ? (
-          <Marker position={[originSelection.lat, originSelection.lon]}>
-            <Popup>
-              <div className="space-y-1 text-sm">
-                <p className="font-semibold">Origin</p>
-                <p>{originSelection.name}</p>
-              </div>
-            </Popup>
-          </Marker>
-        ) : null}
-
-        {destinationSelection ? (
-          <Marker position={[destinationSelection.lat, destinationSelection.lon]}>
-            <Popup>
-              <div className="space-y-1 text-sm">
-                <p className="font-semibold">Destination</p>
-                <p>{destinationSelection.name}</p>
-              </div>
-            </Popup>
-          </Marker>
-        ) : null}
-
-        {routeLegs.map((leg, index) => (
-          leg.coordinates.length ? (
-            <Polyline
-              key={`${leg.routeName}-${index}`}
-              positions={leg.coordinates.map(([lat, lon]) => [lat, lon])}
-              color={leg.color}
-              weight={6}
-              opacity={0.9}
-            />
-          ) : null
-        ))}
-      </MapContainer>
-
-      <aside className="md:absolute md:inset-y-10 md:right-10 md:w-[380px]">
-        <div className="mx-auto -mt-12 w-[92%] max-w-xl rounded-3xl border border-slate-800 bg-slate-950/95 p-6 text-slate-100 shadow-2xl md:mx-0 md:mt-0">
-          <header className="mb-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">Jeepney planner</p>
-              <h2 className="text-xl font-semibold text-white">Plan your ride</h2>
-            </div>
-            <button
-              type="button"
-              onClick={handleSwap}
-              className="rounded-full border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-slate-500 hover:text-white"
-            >
-              Swap
-            </button>
-          </header>
-
-          <div className="space-y-5">
-            <LocationField
-              label="Origin"
-              placeholder="Search barangay, landmark, or stop"
-              value={originQuery}
-              onChange={(value) => {
-                setOriginQuery(value);
-              }}
-              onSelect={handleOriginSelect}
-              suggestions={originSuggestions}
-              isUsingMap={mapSelectionTarget === "origin"}
-              onClear={() => {
-                setOriginQuery("");
-                setOriginSelection(null);
-                setRouteError("");
-              }}
-              onUseMap={() =>
-                setMapSelectionTarget((current) => (current === "origin" ? null : "origin"))
-              }
-            />
-
-            <LocationField
-              label="Destination"
-              placeholder="Where do you want to go?"
-              value={destinationQuery}
-              onChange={(value) => {
-                setDestinationQuery(value);
-              }}
-              onSelect={handleDestinationSelect}
-              suggestions={destinationSuggestions}
-              isUsingMap={mapSelectionTarget === "destination"}
-              onClear={() => {
-                setDestinationQuery("");
-                setDestinationSelection(null);
-                setRouteError("");
-              }}
-              onUseMap={() =>
-                setMapSelectionTarget((current) => (current === "destination" ? null : "destination"))
-              }
-            />
-
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-              <p className="flex items-center gap-2">
-                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-blue-500"></span>
-                {mapSelectionTarget
-                  ? `Tap the map to set your ${mapSelectionTarget}`
-                  : "Use the buttons above to pick a point from the map"}
-              </p>
-              {mapSelectionTarget ? (
-                <button
-                  type="button"
-                  onClick={() => setMapSelectionTarget(null)}
-                  className="rounded-full border border-slate-700 px-3 py-1 text-[11px] font-medium text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-                >
-                  Cancel map pick
-                </button>
-              ) : null}
-            </div>
-
-            {loading ? (
-              <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-100">
-                Searching jeepney routes…
-              </div>
+            {originSelection ? (
+              <Marker position={[originSelection.lat, originSelection.lon]}>
+                <Popup>
+                  <div className="space-y-1 text-sm">
+                    <p className="font-semibold">Origin</p>
+                    <p>{originSelection.name}</p>
+                  </div>
+                </Popup>
+              </Marker>
             ) : null}
 
-            {routeError ? (
-              <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
-                {routeError}
-              </div>
+            {destinationSelection ? (
+              <Marker position={[destinationSelection.lat, destinationSelection.lon]}>
+                <Popup>
+                  <div className="space-y-1 text-sm">
+                    <p className="font-semibold">Destination</p>
+                    <p>{destinationSelection.name}</p>
+                  </div>
+                </Popup>
+              </Marker>
             ) : null}
 
-            {routeSummary && routeLegs.length ? (
-              <section className="space-y-4">
-                <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-                  <h3 className="text-lg font-semibold text-white">Trip overview</h3>
-                  <dl className="mt-3 grid grid-cols-2 gap-4 text-sm text-slate-300">
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Total time</dt>
-                      <dd className="text-lg font-semibold text-white">{routeSummary.totalDurationMinutes} mins</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Transfers</dt>
-                      <dd className="text-lg font-semibold text-white">{routeSummary.transfers}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Walking</dt>
-                      <dd>{routeSummary.walkMinutes} mins</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">Estimated fare</dt>
-                      <dd>{routeSummary.fare ? `₱${routeSummary.fare}` : "Check with driver"}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <ul className="space-y-3">
-                  {routeLegs.map((leg, index) => (
-                    <JeepneyLegDetails key={`${leg.routeName}-${index}`} leg={leg} />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={handleReset}
-              className="w-full rounded-full bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-700"
-            >
-              Reset planner
-            </button>
-          </div>
+            {routeLegs.map((leg, index) =>
+              leg.coordinates.length ? (
+                <Polyline
+                  key={`${leg.routeName}-${index}`}
+                  positions={leg.coordinates.map(([lat, lon]) => [lat, lon])}
+                  color={leg.color}
+                  weight={6}
+                  opacity={0.9}
+                />
+              ) : null,
+            )}
+          </MapContainer>
         </div>
-      </aside>
+      </div>
+
+      <div className="order-1 md:order-2 md:w-[400px] lg:w-[440px]">
+        <SearchBar
+          onSwap={handleSwap}
+          onReset={handleReset}
+          origin={{
+            query: originQuery,
+            suggestions: originSuggestions,
+            onChange: (value) => {
+              setOriginQuery(value);
+              setRouteError("");
+            },
+            onSelect: handleOriginSelect,
+            onClear: () => {
+              setOriginQuery("");
+              setOriginSelection(null);
+              setRouteError("");
+            },
+            onUseMap: () => setMapSelectionTarget((current) => (current === "origin" ? null : "origin")),
+          }}
+          destination={{
+            query: destinationQuery,
+            suggestions: destinationSuggestions,
+            onChange: (value) => {
+              setDestinationQuery(value);
+              setRouteError("");
+            },
+            onSelect: handleDestinationSelect,
+            onClear: () => {
+              setDestinationQuery("");
+              setDestinationSelection(null);
+              setRouteError("");
+            },
+            onUseMap: () => setMapSelectionTarget((current) => (current === "destination" ? null : "destination")),
+          }}
+          mapStatus={{
+            activeTarget: mapSelectionTarget,
+            onCancel: () => setMapSelectionTarget(null),
+          }}
+          routeState={{
+            loading,
+            error: routeError,
+            summary: routeSummary,
+            legs: routeLegs,
+          }}
+        />
+      </div>
     </div>
   );
 }
