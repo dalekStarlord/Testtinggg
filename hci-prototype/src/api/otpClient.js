@@ -99,6 +99,109 @@ export async function getNearbyStops(lat, lon, radius = 500, signal) {
   }
 }
 
+const ROUTE_PLAN_QUERY = `
+  query PlanJeepney(
+    $fromLat: Float!
+    $fromLon: Float!
+    $toLat: Float!
+    $toLon: Float!
+    $date: String!
+    $time: String!
+    $arriveBy: Boolean!
+    $numItineraries: Int!
+    $maxWalkDistance: Int!
+    $wheelchair: Boolean!
+    $transportModes: [TransportMode!]!
+  ) {
+    plan(
+      from: { lat: $fromLat, lon: $fromLon }
+      to: { lat: $toLat, lon: $toLon }
+      date: $date
+      time: $time
+      arriveBy: $arriveBy
+      wheelchair: $wheelchair
+      maxWalkDistance: $maxWalkDistance
+      numItineraries: $numItineraries
+      transportModes: $transportModes
+    ) {
+      itineraries {
+        duration
+        walkTime
+        walkDistance
+        fares {
+          type
+          currency
+          cents
+        }
+        fareProducts {
+          id
+          name
+          amount {
+            currency
+            cents
+          }
+        }
+        legs {
+          mode
+          distance
+          duration
+          realtime
+          aimedStartTime
+          aimedEndTime
+          startTime
+          endTime
+          from {
+            name
+            lat
+            lon
+            stop {
+              gtfsId
+            }
+          }
+          to {
+            name
+            lat
+            lon
+            stop {
+              gtfsId
+            }
+          }
+          line {
+            id
+            publicCode
+            name
+            colour
+            textColour
+          }
+          serviceJourney {
+            line {
+              id
+              publicCode
+              name
+              colour
+              textColour
+            }
+          }
+          route {
+            id
+            shortName
+            longName
+            color
+            textColor
+          }
+          alerts {
+            alertHeaderText
+          }
+          legGeometry {
+            length
+            points
+          }
+        }
+      }
+    }
+  }
+`;
+
 // Enhanced route search with more options
 export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, signal) {
   const {
@@ -107,44 +210,58 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
     wheelchair = false,
     time = new Date(),
     arriveBy = false,
-    allowedTransitModes = ['BUS']
+    allowedTransitModes = ['BUS'],
   } = options;
 
-  const searchParams = new URLSearchParams({
-    fromPlace: `${fromLat},${fromLon}`,
-    toPlace: `${toLat},${toLon}`,
-    numItineraries: String(numItineraries),
-    maxWalkDistance: String(maxWalkDistance),
-    wheelchair: String(Boolean(wheelchair)),
-    arriveBy: String(Boolean(arriveBy)),
-    mode: 'TRANSIT',
-    locale: 'en',
-    showIntermediateStops: 'false',
-    allowedTransitModes: allowedTransitModes.join(','),
-  });
+  const dateTime =
+    time instanceof Date && !Number.isNaN(time.getTime())
+      ? time
+      : new Date(time);
 
-  if (time instanceof Date) {
-    searchParams.set('date', time.toISOString().split('T')[0]);
-    searchParams.set('time', time.toTimeString().split(' ')[0].slice(0, 5));
-  } else if (typeof time === 'string') {
-    const parsed = new Date(time);
-    if (!Number.isNaN(parsed.getTime())) {
-      searchParams.set('date', parsed.toISOString().split('T')[0]);
-      searchParams.set('time', parsed.toTimeString().split(' ')[0].slice(0, 5));
-    }
-  }
+  const dateSource = Number.isNaN(dateTime.getTime()) ? new Date() : dateTime;
+
+  const date = dateSource.toISOString().split('T')[0];
+  const timeString = dateSource.toTimeString().split(' ')[0].slice(0, 5);
+
+  const transportModes = allowedTransitModes.map((mode) => ({ mode }));
 
   try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/plan?${searchParams.toString()}`, {
-      method: 'GET',
+    const response = await fetch(`${OTP_URL}/otp/transmodel/v3`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
       signal,
+      body: JSON.stringify({
+        query: ROUTE_PLAN_QUERY,
+        variables: {
+          fromLat,
+          fromLon,
+          toLat,
+          toLon,
+          date,
+          time: timeString,
+          arriveBy,
+          wheelchair,
+          maxWalkDistance,
+          numItineraries,
+          transportModes,
+        },
+      }),
     });
 
     if (!response.ok) {
       throw new Error('Network response was not ok');
     }
 
-    return await response.json();
+    const json = await response.json();
+
+    if (json.errors && json.errors.length) {
+      const message = json.errors.map((error) => error.message).join('; ');
+      throw new Error(message || 'GraphQL response contained errors');
+    }
+
+    return json.data ?? {};
   } catch (error) {
     console.error('Error fetching route:', error);
     throw error;

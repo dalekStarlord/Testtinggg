@@ -35,6 +35,56 @@ function normaliseHex(color) {
   return color.startsWith("#") ? color : `#${color}`;
 }
 
+function resolveFirstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function getLegColor(leg) {
+  return normaliseHex(
+    resolveFirstDefined(
+      leg.route?.color,
+      leg.routeColor,
+      leg.line?.colour,
+      leg.line?.color,
+      leg.serviceJourney?.line?.colour,
+      leg.serviceJourney?.line?.color,
+    ),
+  );
+}
+
+function getLegTextColor(leg) {
+  const resolved = resolveFirstDefined(
+    leg.route?.textColor,
+    leg.routeTextColor,
+    leg.line?.textColour,
+    leg.line?.textColor,
+    leg.serviceJourney?.line?.textColour,
+    leg.serviceJourney?.line?.textColor,
+  );
+
+  return resolved ? normaliseHex(resolved) : "#ffffff";
+}
+
+function getLegRouteName(leg, index) {
+  return (
+    resolveFirstDefined(
+      leg.route?.shortName,
+      leg.route?.longName,
+      leg.routeShortName,
+      leg.routeLongName,
+      leg.line?.publicCode,
+      leg.line?.name,
+      leg.serviceJourney?.line?.publicCode,
+      leg.serviceJourney?.line?.name,
+    ) || `Leg ${index + 1}`
+  );
+}
+
 function decodePolyline(encoded = "") {
   const points = [];
   let index = 0;
@@ -270,14 +320,9 @@ function Map() {
           const coordinates = legPoints.map(([lat, lon]) => [lat, lon]);
           return {
             coordinates,
-            color: normaliseHex(leg.route?.color || leg.routeColor) ?? "#2563eb",
-            textColor: normaliseHex(leg.route?.textColor || leg.routeTextColor) ?? "#ffffff",
-            routeName:
-              leg.route?.shortName ||
-              leg.route?.longName ||
-              leg.routeShortName ||
-              leg.routeLongName ||
-              `Leg ${index + 1}`,
+            color: getLegColor(leg),
+            textColor: getLegTextColor(leg),
+            routeName: getLegRouteName(leg, index),
             fromName: leg.from?.name || "Origin stop",
             toName: leg.to?.name || "Destination stop",
             distanceKm: (leg.distance || 0) / 1000,
@@ -292,6 +337,11 @@ function Map() {
         } else if (jeepneyOnly.fare?.fare && typeof jeepneyOnly.fare.fare === "object") {
           totalFareCents = Object.values(jeepneyOnly.fare.fare).reduce(
             (sum, fare) => sum + (fare?.cents || 0),
+            0,
+          );
+        } else if (Array.isArray(jeepneyOnly.fareProducts)) {
+          totalFareCents = jeepneyOnly.fareProducts.reduce(
+            (sum, product) => sum + (product?.amount?.cents || 0),
             0,
           );
         }
