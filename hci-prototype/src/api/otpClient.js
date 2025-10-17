@@ -380,7 +380,7 @@ function resolveCoordinate(candidateGetters) {
       if (typeof value === 'number' && !Number.isNaN(value)) {
         return value
       }
-    } catch (error) {
+    } catch {
       // Ignore accessor failures and try the next candidate
     }
   }
