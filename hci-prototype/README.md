@@ -166,3 +166,136 @@ to the correct REST and GraphQL targets.
    - ✅ Confirm the ngrok tunnel is active and reachable from the internet.
    - ✅ Watch for `GraphQL request failed (404)` errors, which indicate the app is still
      pointing at the Vercel origin instead of ngrok.
+
+### Minimal quoting-safe GraphQL probes
+
+When you just need to verify connectivity (or rule out quoting issues) start with the
+smallest possible request:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" `
+  -ContentType "application/json" `
+  -Body '{"query":"{ __typename }"}'
+```
+
+```cmd
+curl -X POST "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"query\":\"{ __typename }\"}"
+```
+
+If those succeed you can move on to the trip planner query. The examples below use the
+minimal Transmodel fields you mentioned and show JSON quoting that PowerShell, CMD, and
+fetch all accept.
+
+#### PowerShell here-string + `ConvertTo-Json`
+
+```powershell
+$Query = @'
+query ($from: InputCoordinates!, $to: InputCoordinates!) {
+  trip(from: $from, to: $to, modes: [bus]) {
+    itineraries {
+      legs {
+        mode
+        line { id name }
+        legGeometry { points }
+      }
+    }
+  }
+}
+'@
+
+$Variables = @{
+  from = @{ latitude = 8.4847; longitude = 124.6517 }
+  to   = @{ latitude = 8.4841; longitude = 124.6579 }
+}
+
+$Body = @{ query = $Query; variables = $Variables } | ConvertTo-Json -Depth 6
+
+Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" `
+  -ContentType "application/json" `
+  -Body $Body
+```
+
+#### Windows CMD one-liner
+
+```cmd
+curl -X POST "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"query\":\"query ($from: InputCoordinates!, $to: InputCoordinates!) { trip(from: $from, to: $to, modes: [bus]) { itineraries { legs { mode line { id name } legGeometry { points } } } } }\",\"variables\":{\"from\":{\"latitude\":8.4847,\"longitude\":124.6517},\"to\":{\"latitude\":8.4841,\"longitude\":124.6579}}}"
+```
+
+The `^` characters are line continuations; remove them if you prefer a single line. All
+double quotes inside the JSON must be escaped as `\"` for CMD.
+
+#### React / TypeScript fetch snippet
+
+```ts
+const TRIP_QUERY = `
+  query ($from: InputCoordinates!, $to: InputCoordinates!) {
+    trip(from: $from, to: $to, modes: [bus]) {
+      itineraries {
+        legs {
+          mode
+          line { id name }
+          legGeometry { points }
+        }
+      }
+    }
+  }
+`;
+
+interface InputCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
+export async function fetchTrip(from: InputCoordinates, to: InputCoordinates) {
+  const response = await fetch("https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: TRIP_QUERY, variables: { from, to } }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GraphQL HTTP ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload.errors) {
+    console.error("GraphQL errors", payload.errors);
+    throw new Error(payload.errors[0]?.message ?? "Unknown GraphQL error");
+  }
+
+  return payload.data?.trip?.itineraries ?? [];
+}
+```
+
+After decoding each leg’s `legGeometry.points` with `@mapbox/polyline`, you can derive
+endpoint markers from the first and last coordinates if your schema omits explicit
+latitude/longitude fields.
+
+#### Formatting checklist
+
+1. Match every `{` with a `}` in the GraphQL document—PowerShell here-strings and CMD
+   literals are unforgiving about stray braces.
+2. Ensure the JSON envelope is exactly `{ "query": "…", "variables": { … } }` with no
+   trailing commas.
+3. Use PowerShell here-strings to avoid escaping quotes; when using CMD, escape every
+   inner double quote as `\"`.
+4. Do not double-encode the body (e.g., running `ConvertTo-Json` on an already encoded
+   JSON string) or append extra braces when concatenating strings.
+
+#### Introspection probe
+
+If you still get syntax errors after confirming the payload formatting, run a schema
+introspection request to make sure the endpoint itself is healthy:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" `
+  -ContentType "application/json" `
+  -Body '{"query":"{ __schema { queryType { name } } }"}'
+```
+
+Successful introspection confirms the server is reachable and that any remaining issue is
+likely payload formatting rather than schema incompatibility.
