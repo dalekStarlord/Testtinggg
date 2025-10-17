@@ -36,13 +36,25 @@ query PlanJeepney(
         line { id publicCode name }
         fromPlace {
           name
-          coordinates { latitude longitude }
-          quay { id stopPlace { id } }
+          location { latitude longitude }
+          quay {
+            id
+            name
+            latitude
+            longitude
+            stopPlace { id name latitude longitude }
+          }
         }
         toPlace {
           name
-          coordinates { latitude longitude }
-          quay { id stopPlace { id } }
+          location { latitude longitude }
+          quay {
+            id
+            name
+            latitude
+            longitude
+            stopPlace { id name latitude longitude }
+          }
         }
         pointsOnLink { points }
       }
@@ -51,7 +63,7 @@ query PlanJeepney(
 }
 ```
 
-`src/api/otpClient.js` normalises the OTP base URL, posts the GraphQL payload, surfaces parse errors, and returns the decoded response for the map to consume. OTP 2.8's Transmodel schema no longer exposes `lat`/`lon` directly on `Place`, so the query requests `coordinates { latitude longitude }` instead.
+`src/api/otpClient.js` normalises the OTP base URL, posts the GraphQL payload, surfaces parse errors, and returns the decoded response for the map to consume. OTP 2.8's Transmodel schema no longer exposes `lat`/`lon` directly on `Place`, so the query requests the `location { latitude longitude }` object and also fetches quay metadata. During normalisation each leg decodes the returned `legGeometry.points` polyline so the first and last vertices can act as a fallback when the schema omits explicit endpoint coordinates.
 
 Example variables the frontend sends with that query:
 
@@ -76,7 +88,19 @@ curl -X POST "$OTP_URL/otp/transmodel/v3" \
   -d '{"query":"query InspectPlace { __type(name: \"Place\") { name fields { name type { name kind ofType { name kind } } } } }"}'
 ```
 
-Replace `InspectPlace` with other types such as `Leg` or `TripPattern` to discover their supported fields.
+Replace `InspectPlace` with other types such as `Leg` or `TripPattern` to discover their supported fields. Two other helpful snippets when validating leg endpoint structures:
+
+```bash
+curl -X POST "$OTP_URL/otp/transmodel/v3" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"query InspectLeg { __type(name: \\"Leg\\") { fields { name type { name kind ofType { name kind } } } } }"}'
+
+curl -X POST "$OTP_URL/otp/transmodel/v3" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"query InspectPlaceVariants { __type(name: \\"Quay\\") { fields { name type { name kind ofType { name kind } } } } __type(name: \\"StopPlace\\") { fields { name type { name kind ofType { name kind } } } } }"}'
+```
+
+Armed with the introspection results you can adjust the inline fragments or fallbacks if your deployment exposes coordinate data through a different field.
 
 ## Responsive search experience
 

@@ -1,3 +1,5 @@
+import { decode as decodePolyline } from '../utils/polyline.js'
+
 const rawBaseUrl = (import.meta.env.VITE_OTP_URL || '').trim()
 const normalizedBase = rawBaseUrl.replace(/\/+$/, '')
 
@@ -208,33 +210,46 @@ export const ROUTE_PLAN_QUERY = `
           }
           fromPlace {
             name
-            coordinates {
+            location {
               latitude
               longitude
             }
             quay {
               id
+              name
+              latitude
+              longitude
               stopPlace {
                 id
+                name
+                latitude
+                longitude
               }
             }
           }
           toPlace {
             name
-            coordinates {
+            location {
               latitude
               longitude
             }
             quay {
               id
+              name
+              latitude
+              longitude
               stopPlace {
                 id
+                name
+                latitude
+                longitude
               }
             }
           }
           pointsOnLink {
             points
           }
+        }
         }
       }
     }
@@ -358,13 +373,34 @@ function normaliseTripResponse(data) {
   }
 }
 
+function resolveCoordinate(candidateGetters) {
+  for (const getter of candidateGetters) {
+    try {
+      const value = getter()
+      if (typeof value === 'number' && !Number.isNaN(value)) {
+        return value
+      }
+    } catch (error) {
+      // Ignore accessor failures and try the next candidate
+    }
+  }
+  return null
+}
+
 function normaliseTripLeg(leg) {
   if (!leg || typeof leg !== 'object') {
     return {}
   }
 
-  const from = mapTripPlace(leg.fromPlace)
-  const to = mapTripPlace(leg.toPlace)
+  const geometryPoints = leg.pointsOnLink?.points ?? leg.legGeometry?.points ?? ''
+  const decodedGeometry = geometryPoints ? decodePolyline(geometryPoints) : []
+  const derivedFrom = decodedGeometry.length ? { lat: decodedGeometry[0][0], lon: decodedGeometry[0][1] } : null
+  const derivedTo = decodedGeometry.length
+    ? { lat: decodedGeometry[decodedGeometry.length - 1][0], lon: decodedGeometry[decodedGeometry.length - 1][1] }
+    : null
+
+  const from = mapTripPlace(leg.fromPlace, derivedFrom)
+  const to = mapTripPlace(leg.toPlace, derivedTo)
 
   const startTime = leg.expectedStartTime || leg.aimedStartTime || null
   const endTime = leg.expectedEndTime || leg.aimedEndTime || null
@@ -395,7 +431,7 @@ function normaliseTripLeg(leg) {
     line: primaryLine,
     route,
     legGeometry: {
-      points: leg.pointsOnLink?.points ?? leg.legGeometry?.points ?? '',
+      points: geometryPoints,
       length: leg.legGeometry?.length ?? null,
     },
     alerts: leg.alerts ?? [],
@@ -403,20 +439,46 @@ function normaliseTripLeg(leg) {
   }
 }
 
-function mapTripPlace(place) {
+function mapTripPlace(place, fallback) {
   if (!place || typeof place !== 'object') {
     return null
   }
 
-  const coordinates = place.coordinates || {}
-
   const stopId =
     place.stopPlace?.id || place.quay?.stopPlace?.id || place.quay?.id || null
 
+  const lat = resolveCoordinate([
+    () => place.location?.latitude,
+    () => place.location?.lat,
+    () => place.coordinates?.latitude,
+    () => place.coordinates?.lat,
+    () => place.latitude,
+    () => place.lat,
+    () => place.quay?.latitude,
+    () => place.quay?.lat,
+    () => place.quay?.stopPlace?.latitude,
+    () => place.quay?.stopPlace?.lat,
+    () => fallback?.lat,
+  ])
+
+  const lon = resolveCoordinate([
+    () => place.location?.longitude,
+    () => place.location?.lon,
+    () => place.coordinates?.longitude,
+    () => place.coordinates?.lon,
+    () => place.longitude,
+    () => place.lon,
+    () => place.quay?.longitude,
+    () => place.quay?.lon,
+    () => place.quay?.stopPlace?.longitude,
+    () => place.quay?.stopPlace?.lon,
+    () => fallback?.lon,
+  ])
+
   return {
     name: place.name ?? null,
-    lat: coordinates.latitude ?? place.lat ?? null,
-    lon: coordinates.longitude ?? place.lon ?? null,
+    lat,
+    lon,
     stop: stopId
       ? {
           gtfsId: stopId,
