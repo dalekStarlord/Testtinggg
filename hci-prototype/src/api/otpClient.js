@@ -1,5 +1,37 @@
-const rawBaseUrl = (import.meta.env.VITE_OTP_URL || '').replace(/\/$/, '')
-const OTP_BASE_URL = rawBaseUrl.endsWith('/otp') ? rawBaseUrl : rawBaseUrl ? `${rawBaseUrl}/otp` : ''
+const rawBaseUrl = (import.meta.env.VITE_OTP_URL || '').trim()
+const normalizedBase = rawBaseUrl.replace(/\/+$/, '')
+
+const otpConfig = (() => {
+  if (!normalizedBase) {
+    return {
+      restBase: '',
+      graphqlEndpoint: '',
+    }
+  }
+
+  if (/\/transmodel\/v3$/i.test(normalizedBase)) {
+    const restBase = normalizedBase.replace(/\/transmodel\/v3$/i, '') || '/otp'
+    return {
+      restBase,
+      graphqlEndpoint: normalizedBase,
+    }
+  }
+
+  if (/\/otp$/i.test(normalizedBase)) {
+    return {
+      restBase: normalizedBase,
+      graphqlEndpoint: `${normalizedBase}/transmodel/v3`,
+    }
+  }
+
+  return {
+    restBase: `${normalizedBase}/otp`,
+    graphqlEndpoint: `${normalizedBase}/otp/transmodel/v3`,
+  }
+})()
+
+const OTP_BASE_URL = otpConfig.restBase
+const OTP_GRAPHQL_ENDPOINT = otpConfig.graphqlEndpoint
 
 function buildOtpUrl(path = '/') {
   const cleanPath = path.startsWith('/') ? path : `/${path}`
@@ -257,8 +289,10 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
     .filter(Boolean)
     .map((mode) => ({ transportMode: String(mode).toUpperCase() }))
 
+  const graphqlUrl = OTP_GRAPHQL_ENDPOINT || buildOtpUrl('/transmodel/v3')
+
   try {
-    const response = await fetch(buildOtpUrl('/transmodel/v3'), {
+    const response = await fetch(graphqlUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -313,4 +347,11 @@ export function describeOtpBaseUrl() {
     return OTP_BASE_URL
   }
   return 'Vite dev proxy (/otp → target)'
+}
+
+export function describeOtpGraphqlUrl() {
+  if (OTP_GRAPHQL_ENDPOINT) {
+    return OTP_GRAPHQL_ENDPOINT
+  }
+  return 'Derived from proxy (/otp/transmodel/v3)'
 }

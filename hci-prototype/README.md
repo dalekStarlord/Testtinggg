@@ -86,12 +86,16 @@ npm run dev   # runs generate-version automatically
 ```
 
 Configure `VITE_OTP_URL` to point at your OTP instance if you are not using the dev proxy.
+You can enter the bare host (`https://<host>`), the OTP root (`https://<host>/otp`), or the
+full GraphQL endpoint (`https://<host>/otp/transmodel/v3`)—the client normalises each form
+to the correct REST and GraphQL targets.
 
 ## Vercel deployment checklist
 
 1. In the Vercel dashboard (Project → Settings → Environment Variables) add
    `VITE_OTP_URL` with the absolute OTP base, e.g. `https://2b36aa1affb0.ngrok-free.app`.
-   The frontend appends `/otp` automatically, so you can leave it off the value.
+   Values ending in `/otp` or `/otp/transmodel/v3` are also accepted and will be
+   normalised automatically.
 2. Trigger a new deployment. The build step runs `npm run generate-version`, which emits
    `public/version.json` and writes version metadata consumed by the footer banner.
 3. After the deployment completes, verify the running revision:
