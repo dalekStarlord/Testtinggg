@@ -2,35 +2,19 @@ const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://2b36aa1affb0.ngrok-free
 
 // Search for locations (autocomplete)
 export async function searchLocations(searchText, signal) {
-  const query = `
-    query locationSearch($text: String!) {
-      geocode(searchText: $text) {
-        features {
-          properties {
-            name
-            label
-          }
-          geometry {
-            coordinates
-          }
-        }
-      }
-    }
-  `;
+  const trimmed = searchText?.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const url = new URL(`${OTP_URL}/otp/routers/default/geocode`);
+  url.searchParams.set('text', trimmed);
+  url.searchParams.set('size', '20');
 
   try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          text: searchText
-        }
-      }),
-      signal
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      signal,
     });
 
     if (!response.ok) {
@@ -38,7 +22,15 @@ export async function searchLocations(searchText, signal) {
     }
 
     const result = await response.json();
-    return result.data?.geocode?.features || [];
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (result?.features && Array.isArray(result.features)) {
+      return result.features;
+    }
+
+    return [];
   } catch (error) {
     console.error('Error searching locations:', error);
     throw error;
@@ -47,51 +39,60 @@ export async function searchLocations(searchText, signal) {
 
 // Get nearby stops
 export async function getNearbyStops(lat, lon, radius = 500, signal) {
-  const query = `
-    query stopsNearby($lat: Float!, $lon: Float!, $radius: Int!) {
-      stopsByRadius(lat: $lat, lon: $lon, radius: $radius) {
-        edges {
-          node {
-            stop {
-              gtfsId
-              name
-              lat
-              lon
-              routes {
-                shortName
-                longName
-              }
-            }
-            distance
-          }
-        }
-      }
-    }
-  `;
+  const url = new URL(`${OTP_URL}/otp/routers/default/index/stops`);
+
+  const toRadians = (value) => (value * Math.PI) / 180;
+  const distanceBetween = (lat1, lon1, lat2, lon2) => {
+    const earthRadius = 6371000; // metres
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+  };
 
   try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          lat,
-          lon,
-          radius
-        }
-      }),
-      signal
-    });
+    const response = await fetch(url.toString(), { signal });
 
     if (!response.ok) {
       throw new Error('Network response was not ok');
     }
 
-    const result = await response.json();
-    return result.data?.stopsByRadius?.edges || [];
+    const stops = await response.json();
+    if (!Array.isArray(stops)) {
+      return [];
+    }
+
+    return stops
+      .map((stop) => {
+        if (typeof stop?.lat !== 'number' || typeof stop?.lon !== 'number') {
+          return null;
+        }
+
+        const distance = distanceBetween(lat, lon, stop.lat, stop.lon);
+        if (distance > radius) {
+          return null;
+        }
+
+        return {
+          node: {
+            stop: {
+              gtfsId: stop.id || stop.gtfsId,
+              name: stop.name,
+              lat: stop.lat,
+              lon: stop.lon,
+              routes: stop.routes || [],
+            },
+            distance,
+          },
+        };
+      })
+      .filter(Boolean);
   } catch (error) {
     console.error('Error fetching nearby stops:', error);
     throw error;
