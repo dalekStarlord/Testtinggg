@@ -171,7 +171,6 @@ export const ROUTE_PLAN_QUERY = `
     $time: String!
     $arriveBy: Boolean!
     $numItineraries: Int!
-    $transportModes: [TransportMode!]!
   ) {
     plan: trip(
       from: { coordinates: { latitude: $fromLat, longitude: $fromLon } }
@@ -179,7 +178,6 @@ export const ROUTE_PLAN_QUERY = `
       dateTime: { date: $date, time: $time }
       arriveBy: $arriveBy
       numTripPatterns: $numItineraries
-      transportModes: $transportModes
     ) {
       itineraries: tripPatterns {
         startTime: expectedStartTime
@@ -187,23 +185,8 @@ export const ROUTE_PLAN_QUERY = `
         duration
         walkTime
         walkDistance
-        fares {
-          type
-          amount {
-            currency
-            cents
-          }
-        }
-        fareProducts {
-          id
-          name
-          amount {
-            currency
-            cents
-          }
-        }
         legs {
-          transportMode
+          mode
           transportSubmode
           distance
           duration
@@ -215,42 +198,28 @@ export const ROUTE_PLAN_QUERY = `
             id
             publicCode
             name
-            colour
-            textColour
           }
           serviceJourney {
             line {
               id
               publicCode
               name
-              colour
-              textColour
             }
           }
           fromPlace {
             name
+            lat
+            lon
             quay {
               id
-            }
-            stopPlace {
-              id
-            }
-            coordinates {
-              latitude
-              longitude
             }
           }
           toPlace {
             name
+            lat
+            lon
             quay {
               id
-            }
-            stopPlace {
-              id
-            }
-            coordinates {
-              latitude
-              longitude
             }
           }
           pointsOnLink {
@@ -268,7 +237,6 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
     numItineraries = 3,
     time = new Date(),
     arriveBy = false,
-    allowedTransitModes = ['BUS'],
   } = options
 
   const dateTime =
@@ -280,10 +248,6 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
 
   const date = dateSource.toISOString().split('T')[0]
   const timeString = dateSource.toTimeString().split(' ')[0].slice(0, 5)
-
-  const transportModes = allowedTransitModes
-    .filter(Boolean)
-    .map((mode) => ({ transportMode: String(mode).toUpperCase() }))
 
   const graphqlUrl = OTP_GRAPHQL_ENDPOINT || buildOtpUrl('/transmodel/v3')
 
@@ -305,7 +269,6 @@ export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}, 
           time: timeString,
           arriveBy,
           numItineraries,
-          transportModes,
         },
       }),
     })
