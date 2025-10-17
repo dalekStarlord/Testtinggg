@@ -209,44 +209,17 @@ export const ROUTE_PLAN_QUERY = `
             }
           }
           fromPlace {
+            __typename
             name
-            location {
-              latitude
-              longitude
-            }
-            quay {
-              id
-              name
-              latitude
-              longitude
-              stopPlace {
-                id
-                name
-                latitude
-                longitude
-              }
-            }
           }
           toPlace {
+            __typename
             name
-            location {
-              latitude
-              longitude
-            }
-            quay {
-              id
-              name
-              latitude
-              longitude
-              stopPlace {
-                id
-                name
-                latitude
-                longitude
-              }
-            }
           }
           pointsOnLink {
+            points
+          }
+          legGeometry {
             points
           }
         }
@@ -476,6 +449,7 @@ function mapTripPlace(place, fallback) {
 
   return {
     name: place.name ?? null,
+    type: place.__typename ?? null,
     lat,
     lon,
     stop: stopId

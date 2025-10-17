@@ -34,36 +34,18 @@ query PlanJeepney(
         expectedStartTime
         expectedEndTime
         line { id publicCode name }
-        fromPlace {
-          name
-          location { latitude longitude }
-          quay {
-            id
-            name
-            latitude
-            longitude
-            stopPlace { id name latitude longitude }
-          }
-        }
-        toPlace {
-          name
-          location { latitude longitude }
-          quay {
-            id
-            name
-            latitude
-            longitude
-            stopPlace { id name latitude longitude }
-          }
-        }
+        serviceJourney { line { id publicCode name } }
+        fromPlace { __typename name }
+        toPlace { __typename name }
         pointsOnLink { points }
+        legGeometry { points }
       }
     }
   }
 }
 ```
 
-`src/api/otpClient.js` normalises the OTP base URL, posts the GraphQL payload, surfaces parse errors, and returns the decoded response for the map to consume. OTP 2.8's Transmodel schema no longer exposes `lat`/`lon` directly on `Place`, so the query requests the `location { latitude longitude }` object and also fetches quay metadata. During normalisation each leg decodes the returned `legGeometry.points` polyline so the first and last vertices can act as a fallback when the schema omits explicit endpoint coordinates.
+`src/api/otpClient.js` normalises the OTP base URL, posts the GraphQL payload, surfaces parse errors, and returns the decoded response for the map to consume. OTP 2.8's Transmodel schema often omits direct latitude/longitude fields on `Place`, so the query keeps only schema-safe fields (`__typename` and `name`) while the normaliser decodes the returned `legGeometry.points` polyline. The first and last vertices of each polyline become the fallback origin/destination coordinates when the backend does not expose endpoint positions directly.
 
 Example variables the frontend sends with that query:
 
@@ -88,7 +70,26 @@ curl -X POST "$OTP_URL/otp/transmodel/v3" \
   -d '{"query":"query InspectPlace { __type(name: \"Place\") { name fields { name type { name kind ofType { name kind } } } } }"}'
 ```
 
-Replace `InspectPlace` with other types such as `Leg` or `TripPattern` to discover their supported fields. Two other helpful snippets when validating leg endpoint structures:
+Replace `InspectPlace` with other types such as `Leg` or `TripPattern` to discover their supported fields. Once you know the `__typename` values returned in `fromPlace`/`toPlace`, extend the query with inline fragments that request the latitude/longitude fields relevant to those concrete types, for example:
+
+```graphql
+fromPlace {
+  __typename
+  name
+  ... on PlaceAtStop {
+    quay {
+      latitude
+      longitude
+    }
+  }
+  ... on Quay {
+    latitude
+    longitude
+  }
+}
+```
+
+If no coordinate fields are available, rely on the decoded polyline vertices—the frontend already takes the first/last point from `legGeometry.points` as marker positions. Two other helpful snippets when validating leg endpoint structures:
 
 ```bash
 curl -X POST "$OTP_URL/otp/transmodel/v3" \
@@ -199,6 +200,8 @@ query ($from: InputCoordinates!, $to: InputCoordinates!) {
         mode
         line { id name }
         legGeometry { points }
+        fromPlace { __typename name }
+        toPlace { __typename name }
       }
     }
   }
@@ -222,7 +225,7 @@ Invoke-RestMethod -Method Post -Uri "https://2b36aa1affb0.ngrok-free.app/otp/tra
 ```cmd
 curl -X POST "https://2b36aa1affb0.ngrok-free.app/otp/transmodel/v3" ^
   -H "Content-Type: application/json" ^
-  -d "{\"query\":\"query ($from: InputCoordinates!, $to: InputCoordinates!) { trip(from: $from, to: $to, modes: [bus]) { itineraries { legs { mode line { id name } legGeometry { points } } } } }\",\"variables\":{\"from\":{\"latitude\":8.4847,\"longitude\":124.6517},\"to\":{\"latitude\":8.4841,\"longitude\":124.6579}}}"
+  -d "{\"query\":\"query ($from: InputCoordinates!, $to: InputCoordinates!) { trip(from: $from, to: $to, modes: [bus]) { itineraries { legs { mode line { id name } legGeometry { points } fromPlace { __typename name } toPlace { __typename name } } } } }\",\"variables\":{\"from\":{\"latitude\":8.4847,\"longitude\":124.6517},\"to\":{\"latitude\":8.4841,\"longitude\":124.6579}}}"
 ```
 
 The `^` characters are line continuations; remove them if you prefer a single line. All
@@ -239,6 +242,8 @@ const TRIP_QUERY = `
           mode
           line { id name }
           legGeometry { points }
+          fromPlace { __typename name }
+          toPlace { __typename name }
         }
       }
     }
@@ -271,8 +276,31 @@ export async function fetchTrip(from: InputCoordinates, to: InputCoordinates) {
 }
 ```
 
-After decoding each leg’s `legGeometry.points` with `@mapbox/polyline`, you can derive
-endpoint markers from the first and last coordinates if your schema omits explicit
+```ts
+import { decode as decodePolyline } from "@mapbox/polyline";
+
+function extractEndpoints(points?: string) {
+  const decoded = points ? decodePolyline(points) : [];
+  if (!decoded.length) {
+    return { start: null, end: null };
+  }
+
+  const [startLat, startLon] = decoded[0];
+  const [endLat, endLon] = decoded[decoded.length - 1];
+
+  return {
+    start: { lat: startLat, lon: startLon },
+    end: { lat: endLat, lon: endLon },
+  };
+}
+
+// Usage inside your rendering logic:
+// const { start, end } = extractEndpoints(leg.legGeometry?.points ?? "");
+// Use `start` and `end` as fallbacks if the GraphQL response omits explicit coordinates.
+```
+
+After decoding each leg’s `legGeometry.points` polyline you can derive endpoint markers
+from the first and last coordinates—handy when the schema omits explicit
 latitude/longitude fields.
 
 #### Formatting checklist
