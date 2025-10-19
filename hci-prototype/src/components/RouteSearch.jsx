@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import { searchRoute } from '../api/otpClient';
+
+function getTimezone() {
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    }
+  } catch (error) {
+    console.warn('Unable to resolve timezone, defaulting to UTC', error);
+  }
+  return 'UTC';
+}
 import { SearchIcon } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -209,14 +220,21 @@ export default function RouteSearch() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for route search
 
+      const now = new Date();
+      const timeInput = {
+        date: now.toISOString().slice(0, 10),
+        time: now.toTimeString().slice(0, 5),
+        timezone: getTimezone(),
+      };
+
       const result = await searchRoute(
         fromCoords.lat,
         fromCoords.lon,
         toCoords.lat,
         toCoords.lon,
         {
-          mode: 'TRANSIT,WALK',
-          time: new Date().toLocaleTimeString('en-US', { hour12: false })
+          modes: ['BUS', 'TRAM', 'RAIL', 'WALK'],
+          time: timeInput,
         }
       );
 
@@ -232,9 +250,9 @@ export default function RouteSearch() {
       if (result.plan?.itineraries?.[0]) {
         const points = [];
         const itinerary = result.plan.itineraries[0];
-        
+
         itinerary.legs.forEach(leg => {
-          if (Array.isArray(leg.steps)) {
+          if (Array.isArray(leg.steps) && leg.steps.length) {
             leg.steps.forEach(step => {
               if (step && typeof step.lat === 'number' && typeof step.lon === 'number') {
                 points.push([step.lat, step.lon]);
@@ -365,7 +383,13 @@ export default function RouteSearch() {
                     </div>
                     <div>
                       <p className="font-medium">
-                        {leg.mode === 'WALK' ? 'Walk' : `Take ${leg.route}`}
+                        {leg.mode === 'WALK'
+                          ? 'Walk'
+                          : `Take ${
+                              typeof leg.route === 'string'
+                                ? leg.route
+                                : leg.route?.shortName || leg.route?.longName || 'transit'
+                            }`}
                       </p>
                       <p className="text-sm text-gray-600">
                         {Math.round(leg.duration / 60)} minutes
