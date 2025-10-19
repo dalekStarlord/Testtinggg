@@ -1,232 +1,169 @@
-const OTP_URL = import.meta.env.VITE_OTP_URL || 'https://8f2a63eb4d94.ngrok-free.app';
+import callOtp from './graphqlClient';
 
-// Search for locations (autocomplete)
-export async function searchLocations(searchText) {
-  const query = `
-    query locationSearch($text: String!) {
-      geocode(searchText: $text) {
-        features {
-          properties {
+const ROUTES_QUERY = `
+  query Routes($modes: [Mode!]!) {
+    routes(filterByModes: $modes) {
+      id
+      shortName
+      longName
+      mode
+    }
+  }
+`;
+
+const PLAN_QUERY = `
+  query PlanTrip(
+    $from: InputCoordinates!
+    $to: InputCoordinates!
+    $numItineraries: Int!
+    $modes: [TransportMode!]
+    $maxWalkDistance: Float
+    $wheelchair: Boolean
+    $time: TimeInput!
+    $arriveBy: Boolean
+  ) {
+    plan(
+      from: { coordinates: $from }
+      to: { coordinates: $to }
+      numItineraries: $numItineraries
+      transportModes: $modes
+      maxWalkDistance: $maxWalkDistance
+      wheelchair: $wheelchair
+      dateTime: $time
+      arriveBy: $arriveBy
+    ) {
+      itineraries {
+        duration
+        walkTime
+        transitTime
+        waitingTime
+        legs {
+          mode
+          startTime
+          endTime
+          duration
+          distance
+          route {
+            shortName
+            longName
+          }
+          from {
             name
-            label
+            lat
+            lon
           }
-          geometry {
-            coordinates
+          to {
+            name
+            lat
+            lon
           }
-        }
-      }
-    }
-  `;
-
-  try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          text: searchText
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Network response was not ok');
-    }
-
-    const result = await response.json();
-    return result.data?.geocode?.features || [];
-  } catch (error) {
-    console.error('Error searching locations:', error);
-    throw error;
-  }
-}
-
-// Get nearby stops
-export async function getNearbyStops(lat, lon, radius = 500) {
-  const query = `
-    query stopsNearby($lat: Float!, $lon: Float!, $radius: Int!) {
-      stopsByRadius(lat: $lat, lon: $lon, radius: $radius) {
-        edges {
-          node {
-            stop {
-              gtfsId
-              name
-              lat
-              lon
-              routes {
-                shortName
-                longName
-              }
-            }
+          steps {
+            lat
+            lon
             distance
+            streetName
+            relativeDirection
+            absoluteDirection
           }
+        }
+        fares {
+          type
+          currency
+          cents
         }
       }
     }
-  `;
-
-  try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          lat,
-          lon,
-          radius
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Network response was not ok');
-    }
-
-    const result = await response.json();
-    return result.data?.stopsByRadius?.edges || [];
-  } catch (error) {
-    console.error('Error fetching nearby stops:', error);
-    throw error;
   }
+`;
+
+export async function fetchRoutes(modes = ['BUS']) {
+  const normalizedModes = Array.isArray(modes) ? modes : [modes];
+  const data = await callOtp(ROUTES_QUERY, { modes: normalizedModes });
+  return data?.routes ?? [];
 }
 
-// Enhanced route search with more options
-export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) {
-  const { 
+function buildTransportModes(modes = []) {
+  const normalized = Array.isArray(modes) ? modes : [modes];
+  return normalized
+    .map((mode) => {
+      if (typeof mode === 'string') {
+        return { mode: mode.toUpperCase() };
+      }
+      return mode;
+    })
+    .filter(Boolean);
+}
+
+function resolveTimezone() {
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    }
+  } catch (error) {
+    // Ignore and fall back to UTC.
+  }
+  return 'UTC';
+}
+
+function toTimeInput(time) {
+  if (time && time.date && time.time) {
+    return {
+      date: time.date,
+      time: time.time,
+      timezone: time.timezone || resolveTimezone(),
+    };
+  }
+
+  const now = new Date();
+  return {
+    date: now.toISOString().slice(0, 10),
+    time: now.toTimeString().slice(0, 5),
+    timezone: resolveTimezone(),
+  };
+}
+
+export async function planTrip(from, to, options = {}) {
+  const {
     numItineraries = 3,
-    modes = ['TRANSIT', 'WALK'],
+    modes = ['BUS', 'TRAM'],
     maxWalkDistance = 1000,
     wheelchair = false,
-    time = new Date().toISOString(),
-    arriveBy = false
+    time,
+    arriveBy = false,
   } = options;
 
-  const query = `
-    query planTrip(
-      $from: InputCoordinates!, 
-      $to: InputCoordinates!,
-      $numItineraries: Int!,
-      $modes: [TransitMode!],
-      $maxWalkDistance: Float,
-      $wheelchair: Boolean,
-      $time: String!,
-      $arriveBy: Boolean
-    ) {
-      plan(
-        from: $from
-        to: $to
-        numItineraries: $numItineraries
-        transportModes: $modes
-        maxWalkDistance: $maxWalkDistance
-        wheelchair: $wheelchair
-        time: $time
-        arriveBy: $arriveBy
-      ) {
-        itineraries {
-          duration
-          walkTime
-          transitTime
-          waitingTime
-          legs {
-            mode
-            startTime
-            endTime
-            duration
-            distance
-            route {
-              shortName
-              longName
-              type
-              color
-              textColor
-            }
-            from {
-              name
-              lat
-              lon
-              stop {
-                gtfsId
-                code
-                platformCode
-              }
-            }
-            to {
-              name
-              lat
-              lon
-              stop {
-                gtfsId
-                code
-                platformCode
-              }
-            }
-            steps {
-              distance
-              streetName
-              relativeDirection
-              absoluteDirection
-              stayOn
-              bogusName
-              lon
-              lat
-            }
-            alerts {
-              alertHeaderText
-              alertDescriptionText
-              effectiveStartDate
-              effectiveEndDate
-            }
-          }
-          fares {
-            type
-            currency
-            cents
-          }
-        }
-      }
-    }
-  `;
+  const variables = {
+    from,
+    to,
+    numItineraries,
+    modes: buildTransportModes(modes),
+    maxWalkDistance,
+    wheelchair,
+    time: toTimeInput(time),
+    arriveBy,
+  };
 
-  try {
-    const response = await fetch(`${OTP_URL}/otp/routers/default/graphql`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        variables: {
-          from: {
-            lat: fromLat,
-            lon: fromLon
-          },
-          to: {
-            lat: toLat,
-            lon: toLon
-          },
-          numItineraries,
-          modes: modes.map(mode => ({ mode })),
-          maxWalkDistance,
-          wheelchair,
-          time,
-          arriveBy
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('Network response was not ok');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching route:', error);
-    throw error;
-  }
+  return callOtp(PLAN_QUERY, variables);
 }
+
+export async function searchRoute(fromLat, fromLon, toLat, toLon, options = {}) {
+  const from = { lat: Number(fromLat), lon: Number(fromLon) };
+  const to = { lat: Number(toLat), lon: Number(toLon) };
+
+  if (Number.isNaN(from.lat) || Number.isNaN(from.lon) || Number.isNaN(to.lat) || Number.isNaN(to.lon)) {
+    throw new Error('Invalid coordinates supplied to searchRoute');
+  }
+
+  return planTrip(from, to, options);
+}
+
+export const queries = {
+  ROUTES_QUERY,
+  PLAN_QUERY,
+};
+
+export default {
+  fetchRoutes,
+  planTrip,
+  searchRoute,
+};
